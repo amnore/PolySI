@@ -1,13 +1,14 @@
 plugins {
     id 'java'
+    id "io.freefair.lombok" version '6.3.0'
 }
 
 group = 'CobraVerifier'
 version = '0.0.1-SNAPSHOT'
 description = 'CobraVerifier'
 
-sourceCompatibility = 1.8
-targetCompatibility = 1.8
+sourceCompatibility = 11
+targetCompatibility = 11
 
 repositories {
     mavenCentral()

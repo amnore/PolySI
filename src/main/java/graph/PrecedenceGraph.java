@@ -674,5 +674,40 @@ public class PrecedenceGraph {
 		
 		return comp_pg;
 	}
-	
+
+	/*
+	 * Check whether this graph is complete, which means all transactions are
+	 * commited, except the initial one.
+	 */
+	public boolean isComplete() {
+		for (var txn : allNodes()) {
+			if (txn.getStatus() != TxnType.COMMIT
+					&& txn.getTxnid() != VeriConstants.INIT_TXN_ID) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/*
+	 * Check whether all reads read the same value from the corresponding write
+	 */
+	public boolean readWriteMatches() {
+		for (var txn : allNodes()) {
+			for (OpNode op : txn.getOps()) {
+				if (op.isRead || !m_readFromMapping.containsKey(op.wid)) {
+					continue;
+				}
+
+				for (OpNode rop : m_readFromMapping.get(op.wid)) {
+					if (op.val_hash != rop.val_hash) {
+						return false;
+					}
+				}
+			}
+		}
+
+		return true;
+	}
 }
