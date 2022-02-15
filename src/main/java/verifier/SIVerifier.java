@@ -1,9 +1,12 @@
 package verifier;
 
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
 
 import graph.PrecedenceGraph;
+import graph.TxnNode;
+import lombok.Data;
+import lombok.RequiredArgsConstructor;
+import util.Pair;
 import util.UnimplementedError;
 import util.VeriConstants;
 
@@ -75,10 +78,72 @@ public class SIVerifier extends AbstractLogVerifier {
 	 *
 	 * Note that it is possible for C to precede B in SI.
 	 */
-	private static Set<Constraint> generateConstraints(PrecedenceGraph graph) {
-		for (var b: graph.allEdges()) {
+	private static Set<SIConstraint> generateConstraints(PrecedenceGraph graph) {
+		var writeTxns = getKeyAndWriteTxns(graph);
+		var readOps = graph.m_readFromMapping;
+		var constraints = new HashSet<SIConstraint>();
+
+		for (var a: graph.allNodes()) {
+			for (var op: a.getOps()) {
+				if (op.isRead) {
+					continue;
+				}
+
+				for (var bop: readOps.get(op.id)) {
+					var b = graph.getNode(bop.txnid);
+					for (var c: writeTxns.get(op.key_hash)) {
+						constraints.add(new SIConstraint(
+							new SIEdge[]{
+								new SIEdge(c, a, EdgeType.WW),
+								new SIEdge(a, b, EdgeType.WR)
+							},
+							new SIEdge[]{
+								new SIEdge(a, b, EdgeType.WR),
+								new SIEdge(b, c, EdgeType.RW),
+								new SIEdge(a, c, EdgeType.WW)
+							}
+						));
+					}
+				}
+			}
 		}
 
-		throw new UnimplementedError();
+		return constraints;
 	}
+
+	// get the set of txns that write to each key
+	private static Map<Long, Set<TxnNode>> getKeyAndWriteTxns(PrecedenceGraph graph) {
+		var m = new HashMap<Long, Set<TxnNode>>();
+		for (var t: graph.allNodes()) {
+			for (var op: t.getOps()) {
+				if (op.isRead) {
+					continue;
+				}
+
+				if (!m.containsKey(op.key_hash)) {
+					m.put(op.key_hash, new HashSet<>());
+				}
+				m.get(op.key_hash).add(t);
+			}
+		}
+
+		return m;
+	}
+}
+
+enum EdgeType {
+	WW, WR, RW
+}
+
+@Data
+class SIEdge {
+	final TxnNode from;
+	final TxnNode to;
+	final EdgeType type;
+}
+
+@Data
+class SIConstraint {
+	final SIEdge[] edges1;
+	final SIEdge[] edges2;
 }

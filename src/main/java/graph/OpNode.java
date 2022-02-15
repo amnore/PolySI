@@ -52,4 +52,19 @@ public class OpNode {
 			? String.format("Read[id=%x][txnid=%x][wid=%x][w_txnid=%x][key=%x][val=%x]", id, txnid, wid, read_from_txnid, key_hash, val_hash)
 			: String.format("Write[id=%x][txnid=%x][key=%x][value=%x]", id, txnid, key_hash, val_hash);
 	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) return true;
+		if (o == null || getClass() != o.getClass()) return false;
+
+		OpNode opNode = (OpNode) o;
+
+		return id == opNode.id;
+	}
+
+	@Override
+	public int hashCode() {
+		return (int) (id ^ (id >>> 32));
+	}
 }

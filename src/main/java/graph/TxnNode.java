@@ -130,4 +130,18 @@ public class TxnNode implements Cloneable {
 		}
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) return true;
+		if (o == null || getClass() != o.getClass()) return false;
+
+		TxnNode txnNode = (TxnNode) o;
+
+		return id == txnNode.id;
+	}
+
+	@Override
+	public int hashCode() {
+		return (int) (id ^ (id >>> 32));
+	}
 }
