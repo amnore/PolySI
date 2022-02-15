@@ -44,7 +44,7 @@ import util.VeriConstants.LoggerType;
  */
 
 public abstract class AbstractVerifier {
-	
+
 	// some statistics
 	//   about workload
 	public int num_rmw_ww = 0;
@@ -84,17 +84,17 @@ public abstract class AbstractVerifier {
 	private Set<Long> init_txn_keys = null;
 	// tack all the ongoing txns
 	protected Set<TxnNode> potential_ongoing_txns = null;
-	
+
 	// if remote logging from socket
 	protected boolean remote_log = false;
-	
+
 	// epoch and round
 	public Set<TxnNode> new_txns_this_turn;
 	public int epoch_agree = 0;
 	public int round = 0;
 	public Map<Long, Set<Long>> frontier = null;
-	
-	
+
+
 	public AbstractVerifier() {
 		m_g = new PrecedenceGraph();
 
@@ -111,7 +111,7 @@ public abstract class AbstractVerifier {
 		// init txn should be always ONGOING
 		//init.commit(0);
 		m_g.addTxnNode(init);
-		
+
 		client_list = new ArrayList<String>();
 		client2id = new HashMap<String, Integer>();
 		last_txn = new ArrayList<Long>();
@@ -120,19 +120,19 @@ public abstract class AbstractVerifier {
 		init_txn_keys = new HashSet<Long>();
 		potential_ongoing_txns = new HashSet<TxnNode>();
 		new_txns_this_turn = new HashSet<TxnNode>();
-		
+
 		// initialize INIT_TXN with GC ops
 		//GarbageCollector.addGCops2Init(init, init_txn_keys);
 	}
-	
+
 	public PrecedenceGraph getGraph() {return m_g;}
-	
+
 	abstract public boolean audit();
 	abstract public int[] count();
 	abstract public boolean continueslyAudit();
 
 	// ======= client names ========
-	
+
 	public int getClientId(String name) {
 		if (client2id.containsKey(name)) {
 			assert name.equals(client_list.get(client2id.get(name)));
@@ -152,29 +152,29 @@ public abstract class AbstractVerifier {
 		}
 		return value;
 	}
-	
+
 	public long ExtractClientLogFromStream(DataInputStream in, PrecedenceGraph g, String client_name) throws IOException {
 		int cid = getClientId(client_name);
 		// if we first see this client
 		if (cid == VeriConstants.TXN_NULL_CLIENT_ID) {
 			cid = client_list.size();
 			client_list.add(client_name);
-			last_txn.add(VeriConstants.NULL_TXN_ID); 
+			last_txn.add(VeriConstants.NULL_TXN_ID);
 			client_txn_counter.put(cid, 0);
 			client2id.put(client_name, cid);
-		}		
-		
+		}
+
 		//System.out.println("Client name = " + client_name);
 		long last_txnid = ExtractClientLogFromStream(in, g, last_txn.get(cid), client_txn_counter, cid);
 		last_txn.set(cid, last_txnid);
 		return last_txnid;
 	}
-	
+
 
 	public static long hashKey(String key) {
 		return LongHashFunction.xx().hashChars(key);
 	}
-	
+
 	/*
 	 * Extract the graph from a stream
 	 *   (a byte stream from cloud
@@ -188,7 +188,7 @@ public abstract class AbstractVerifier {
 		 * (write, writeId, key_hash, val): 25B <br>
 		 * (read, write_TxnId, writeId, key_hash, value) : 33B <br>
 		 */
-		
+
 		int parsed_txn_counter = 0;
 		boolean reach_parse_bound = false;
 		int txn_counter = client_txn_counter.get(client_id);
@@ -196,10 +196,10 @@ public abstract class AbstractVerifier {
 		TxnNode cur_txn = null;
 		TxnNode prev_txn = g.getNode(recent_txnid); // will be null if there is no such txn
 		assert prev_txn == null /*init*/ || prev_txn.getClientId() == client_id;
-    char op_type;
-    int op_counter = 0;
+		char op_type;
+		int op_counter = 0;
 		long wid = 0, key_hash = 0, val_hash = 0, prev_txnid = 0, txnid = 0;
-		
+
 		while(true) {
 			// break if not enough data (for socket; when beginning)
 			if (remote_log && op_counter == 0 && in.available() < VeriConstants.MAX_BYTES_IN_TXN) {
@@ -210,8 +210,8 @@ public abstract class AbstractVerifier {
 				op_type = (char) in.readByte();
 			} catch (EOFException e) {
 				break;
-	    }
-			
+			}
+
 			switch(op_type) {
 			case 'S':
 				txnid = in.readLong();
@@ -266,7 +266,7 @@ public abstract class AbstractVerifier {
 				}
 				// this is a new txn the parser sees
 				new_txns_this_turn.add(cur_txn);
-				//System.out.println("C[" + Long.toHexString(txnid) + "]");		
+				//System.out.println("C[" + Long.toHexString(txnid) + "]");
 				prev_txn = cur_txn;
 				cur_txn = null;
 				this.num_txns++;
@@ -303,7 +303,7 @@ public abstract class AbstractVerifier {
 				val_hash = in.readLong();
 				// NOTE: if the prev_txnid == INIT_TXNID, then we update it to keyhash as wid
 				// FIXME: separate NULL and INIT?
-				if (prev_txnid == VeriConstants.INIT_TXN_ID || prev_txnid == VeriConstants.NULL_TXN_ID) {	
+				if (prev_txnid == VeriConstants.INIT_TXN_ID || prev_txnid == VeriConstants.NULL_TXN_ID) {
 					if (wid == VeriConstants.INIT_WRITE_ID || wid == VeriConstants.NULL_TXN_ID) {
 						// NOTE: val_hash is 0 for NULL; but an arbitrary value for INIT
 						wid = key_hash; // change the INIT_WRITE_ID => key_hash
@@ -328,20 +328,20 @@ public abstract class AbstractVerifier {
 
 			if(reach_parse_bound) {
 				break;
-			}	
+			}
 		} // end of while
-		
+
 		//System.out.println("====finish CID[" + client_id + "] #txn[" + txn_counter + "]====");
-		
+
 		// update the txn counter of current client
 		client_txn_counter.put(client_id, txn_counter);
 		assert cur_txn == null; // assert this is then end of one txn or there is no txn at all
 		// if we didn't find any transaction, just return what we got
 		return (prev_txn == null) ? recent_txnid : prev_txn.getTxnid();
 	}
-	
+
 	// if there is read-modify-write in this txn, we add inferred WW-order to g
-	public static void AddRMWEdge(PrecedenceGraph g, TxnNode cur_txn, AbstractVerifier veri) {	
+	public static void AddRMWEdge(PrecedenceGraph g, TxnNode cur_txn, AbstractVerifier veri) {
 		Map<Long, OpNode> key2read = new HashMap<Long, OpNode>();
 		// read
 		for (OpNode op : cur_txn.getOps()) {
@@ -361,7 +361,7 @@ public abstract class AbstractVerifier {
 			}
 		}
 	}
-	
+
 	private void addWriteIfNotExist(PrecedenceGraph g, long key_hash, long val_hash) {
 		boolean has_write = init_txn_keys.contains(key_hash);
 		if (!has_write) {
@@ -374,7 +374,7 @@ public abstract class AbstractVerifier {
 			init_txn_keys.add(key_hash);
 		}
 	}
-	
+
 	public static void AddWREdges(PrecedenceGraph g, Set<TxnNode> new_txns_this_turn, AbstractVerifier veri) {
 		for (TxnNode txn : new_txns_this_turn) {
 			long cur_txnid = txn.getTxnid();
@@ -387,11 +387,11 @@ public abstract class AbstractVerifier {
 						}
 						assert false;
 					}
-					
+
 					if (veri!=null && veri.deleted_txnids.contains(dependent_txnid)) {
 						assert false;
 					}
-					
+
 					// NOTE: it is possible that the log is inconsistent that some client-log is "faster" than others,
 					// so we may see that one edge is point to somewhere unknown, just skip (it will be seen eventually)
 					if (g.getNode(dependent_txnid) == null) {
@@ -406,7 +406,7 @@ public abstract class AbstractVerifier {
 						veri.num_wr++;
 					}
 					long prev_wid = op.wid;
-					
+
 					if (!g.m_readFromMapping.containsKey(prev_wid)) {
 						g.m_readFromMapping.put(prev_wid, new HashSet<OpNode>());
 					}
@@ -415,13 +415,13 @@ public abstract class AbstractVerifier {
 			}
 		}
 	}
-	
-	
+
+
 	public void UpdateWid2Txnid(PrecedenceGraph g, Set<TxnNode> new_txns_this_turn) {
 		if (wid2txnid == null) {
 			wid2txnid = new HashMap<Long,Long>();
 		}
-		
+
 		// construct all current known wid->txnid
 		for (TxnNode txn : new_txns_this_turn) {
 			assert !deleted_txnids.contains(txn.getTxnid());
@@ -458,7 +458,7 @@ public abstract class AbstractVerifier {
 					// [w1 --> op] && [w1 --> w2] => [op --> w2]
 					long w1 = op.wid;
 					if (wwpairs.containsKey(w1)) { // w1-->w2
-						long w2 = wwpairs.get(w1);	
+						long w2 = wwpairs.get(w1);
 						// USTBABUG: w1's txn might not be seen by the verifier, hence wid2txnid may not have it
 						// however, it's okay, given both the w2's and rop's txns are visible in this round.
 						if (wid2txnid.containsKey(w1)) {
@@ -487,7 +487,7 @@ public abstract class AbstractVerifier {
 			}
 		}
 	}
-	
+
 	private static void AddRWEdgesInner(PrecedenceGraph g, Map<Long, Long> wid2txnid, long w1, long w2) {
 		if (g.m_readFromMapping.containsKey(w1)) { // w1-->rop
 			for (OpNode rop : g.m_readFromMapping.get(w1)) {
@@ -500,8 +500,8 @@ public abstract class AbstractVerifier {
 			}
 		}
 	}
-	
-	
+
+
 	private void addRWedge(TxnBeginEndEvent cur_event, TxnBeginEndEvent e, long key, PrecedenceGraph g) {
 		boolean found_write = false;
 		Map<Long,Set<OpNode>> readFromMapping = g.m_readFromMapping;
@@ -527,7 +527,7 @@ public abstract class AbstractVerifier {
 		}
 		assert found_write; // assert there is one write op to this key
 	}
-	
+
 	private void OrochiCore(TxnBeginEndEvent event, Set<TxnBeginEndEvent> frontier, long key, PrecedenceGraph g) {
 		if (event.begin) {
 			// there should be a TO order for ww
@@ -553,7 +553,7 @@ public abstract class AbstractVerifier {
 			frontier.add(event);
 		}
 	}
-	
+
 	// add the time order edges for conflict serializability between conflict txns
 	// (1) create two event for one txn, the start and end event
 	// (2) sort the events by time
@@ -578,14 +578,14 @@ public abstract class AbstractVerifier {
 			all_events.get(begin_ts).add(0, new TxnBeginEndEvent(true, begin_ts, txn)); // add begin at the head
 			all_events.get(commit_ts).add(new TxnBeginEndEvent(false, commit_ts, txn)); // add commit at the end
 		}
-		
+
 		// (2)
 		SortedMap<Long,List<TxnBeginEndEvent>> sorted_events = new TreeMap<Long, List<TxnBeginEndEvent>>(all_events);
 		// (3)
 		Map<Long, Set<TxnBeginEndEvent>> perkey_frontier = new HashMap<Long, Set<TxnBeginEndEvent>>();
 		// re-usable variables
 		List<Long> txn_wkeys = new ArrayList<Long>();
-		
+
 		for (List<TxnBeginEndEvent> cur_events : sorted_events.values()) {
 			for (TxnBeginEndEvent cur_event : cur_events) {
 				// update concurrency counter
@@ -612,11 +612,11 @@ public abstract class AbstractVerifier {
 					// main update
 					OrochiCore(cur_event, frontier, key, g);
 				}
-				
+
 			}
 		}
 	}
-	
+
 	// add the time order edges for strict serializability
 	// (1) create two event for one txn, the start and end event
 	// (2) sort the events by time
@@ -629,24 +629,24 @@ public abstract class AbstractVerifier {
 		for (TxnNode txn : g.allNodes()) {
 			long begin_ts = txn.getBeginTimestamp();
 			long commit_ts = txn.getCommitTimestamp();
-			
+
 			all_events.putIfAbsent(begin_ts, new LinkedList<TxnBeginEndEvent>());
 			all_events.putIfAbsent(commit_ts, new LinkedList<TxnBeginEndEvent>());
-			
+
 			// NOTE: if two txns have the same timestamp, we treat them as concurrent which is pessimistic for Cobra.
 			// i.e., put begin ahead of commit for the same timestamp
 			all_events.get(begin_ts).add(0, new TxnBeginEndEvent(true, begin_ts, txn)); // add begin at the head
 			all_events.get(commit_ts).add(new TxnBeginEndEvent(false, commit_ts, txn)); // add commit at the end
 		}
-		
+
 		// (2)
 		SortedMap<Long,List<TxnBeginEndEvent>> sorted_events = new TreeMap<Long, List<TxnBeginEndEvent>>(all_events);
 		// (3) frontier collects commit events that are most-recent
 		Set<TxnBeginEndEvent> frontier = new HashSet<TxnBeginEndEvent>();
-		
+
 		for (List<TxnBeginEndEvent> cur_events : sorted_events.values()) {
 			for (TxnBeginEndEvent cur_event : cur_events) {
-				
+
 				// update concurrency counter
 				if (cur_event.begin) {
 					alive_txns++;
@@ -684,9 +684,9 @@ public abstract class AbstractVerifier {
 			}
 		}
 	}
-	
-	
-	
+
+
+
 	public static void CheckValues(PrecedenceGraph pg) {
 		for (TxnNode n : pg.allNodes()) {
 			for (OpNode op : n.getOps()) {
@@ -699,31 +699,31 @@ public abstract class AbstractVerifier {
 			}
 		}
 	}
-	
+
 	public static void CheckValues(PrecedenceGraph pg, Set<TxnNode> new_txns_this_turn) {
 		for (TxnNode n : new_txns_this_turn) {
 			for (OpNode op : n.getOps()) {
 				// check all reads read the same value from the corresponding writes
 				if (op.isRead) { continue; }
 				if (!pg.m_readFromMapping.containsKey(op.wid)) { continue; }
-				for (OpNode rop : pg.m_readFromMapping.get(op.wid)) {	
-					
-					
+				for (OpNode rop : pg.m_readFromMapping.get(op.wid)) {
+
+
 					if (op.val_hash != rop.val_hash) {
 						System.out.println("wop = " + op.toString());
 						System.out.println("rop = " + rop.toString());
 						System.out.println("write txn = " + pg.getNode(op.txnid).toString2());
 						System.out.println("read txn = " + pg.getNode(rop.txnid).toString2());
 					}
-					
-					
+
+
 					assert op.val_hash == rop.val_hash;
 				}
 			}
 		}
 	}
-	
-	
+
+
 	public static void CheckStaleReads(PrecedenceGraph m_g, Map<Long, Set<Long>> frontier,
 			Set<TxnNode> new_compl_nodes, int epoch_agree) {
 		for (TxnNode n : new_compl_nodes) {
@@ -732,25 +732,25 @@ public abstract class AbstractVerifier {
 					long prev_txid = op.read_from_txnid;
 					if (prev_txid == VeriConstants.INIT_TXN_ID) {continue;}
 					assert m_g.containTxnid(prev_txid);
-					
+
 					int epoch = m_g.getNode(prev_txid).getVersion();
-					if (epoch == VeriConstants.TXN_NULL_VERSION || 
-							epoch > epoch_agree -2) 
+					if (epoch == VeriConstants.TXN_NULL_VERSION ||
+							epoch > epoch_agree -2)
 					{
 						continue;
 					}
-					
+
 					long key = op.key_hash;
 					long wid = op.wid;
 					if (key == wid || key == VeriConstants.VERSION_KEY_HASH) {continue;}
-					
+
 					if (!frontier.containsKey(key)) {
 						System.out.println("key: [" + Long.toHexString(key));
 						System.out.println("txn: " + n.toString2());
 						System.out.println("frontier: size=" + frontier.size());
 						assert false;
 					}
-					
+
 					if (!frontier.get(key).contains(prev_txid)) {
 						System.out.println("epoch_agree=" + epoch_agree);
 						System.out.println("key: [" + Long.toHexString(key));
@@ -763,9 +763,9 @@ public abstract class AbstractVerifier {
 						}
 						assert false;
 					}
-					
-					
-					
+
+
+
 					assert frontier.containsKey(key);
 					assert frontier.get(key).contains(prev_txid);
 				}
@@ -774,9 +774,9 @@ public abstract class AbstractVerifier {
 	}
 
 
-	
+
 	// ===== helper functions ======
-	
+
 	private int max(int[] array) {
 		int max = 0;
 		for(int i : array) {
@@ -784,17 +784,17 @@ public abstract class AbstractVerifier {
 		}
 		return max;
 	}
-	
+
 	private float average(int[] array) {
 		if (array.length == 0) return 0;
 		int sum = 0;
 		for(int i:array) sum += i;
 		return (float)sum/array.length;
 	}
-	
+
 
 	// === show results ===
-	
+
 	public void ClearCounters() {
 		num_rmw_ww = 0;
 		num_ops = 0;
@@ -813,7 +813,7 @@ public abstract class AbstractVerifier {
 		// constraints
 		num_merged_constraints = 0;
 	}
-	
+
 	public String profResults() {
 		StringBuilder sb = new StringBuilder();
 		Profiler prof = Profiler.getInstance();
@@ -845,7 +845,7 @@ public abstract class AbstractVerifier {
 		if (this.OOT) {
 			sb.append("  search time: OOT\n");
 		} else {
-			sb.append("  search time:" + prof.getTime(VeriConstants.PROF_SEARCH) + "ms\n");	
+			sb.append("  search time:" + prof.getTime(VeriConstants.PROF_SEARCH) + "ms\n");
 			sb.append("    -> 1:" + prof.getTime(VeriConstants.PROF_MONOSAT_1) + "ms\n");
 			sb.append("    -> 2:" + prof.getTime(VeriConstants.PROF_MONOSAT_2) + "ms\n");
 		}
@@ -857,7 +857,7 @@ public abstract class AbstractVerifier {
 		sb.append("    -> transitive reduction:" + prof.getTime(VeriConstants.PROF_TRANSITIVE_REDUCTION)+"ms\n");
 		return sb.toString();
 	}
-	
+
 	public String statisticsResults() {
 		DecimalFormat df = new DecimalFormat();
 		df.setMaximumFractionDigits(2);
@@ -890,27 +890,27 @@ public abstract class AbstractVerifier {
 		sb.append("-----graph-----\n");
 		sb.append("graph's #node=" + m_g.allNodes().size() + "\n");
 		sb.append("graph's #edges=" + m_g.allEdges().size() + "\n");
-		
+
 		return sb.toString();
 	}
-	
+
 	// helper class for AddTimeOrderEdges(...)
 	static class TxnBeginEndEvent {
 		public boolean begin;
 		public long timestamp;
 		public TxnNode txn;
-		
+
 		public TxnBeginEndEvent(boolean begin, long ts, TxnNode txn) {
 			this.begin = begin;
 			this.timestamp = ts;
 			this.txn = txn;
 		}
-		
+
 		public String toString() {
 			return (begin ? "[Begin]" : "[Commit]") + ", " + Long.toHexString(timestamp) + " " + txn.toString();
 		}
 	}
-	
+
 	//===============UnitTestCode================
 
 }

@@ -4,13 +4,14 @@ import java.util.ArrayList;
 
 import util.VeriConstants;
 
-public class TxnNode extends AbsNode{
+public class TxnNode {
 
 	public enum TxnType {
 		ONGOING, COMMIT, ABORT, STALE,
 	};
 
 	// attributes
+	long id;
 	TxnType type = TxnType.ONGOING;
 	ArrayList<OpNode> ops = new ArrayList<OpNode>();
 	long begin_timestamp = VeriConstants.TXN_NULL_TS;
@@ -22,14 +23,14 @@ public class TxnNode extends AbsNode{
 	public int prev_version = VeriConstants.TXN_NULL_VERSION;
 	public boolean frozen = false;  // used also as monitoring
 
-	
+
 	public TxnNode(long id) {
-		super(id);
+		this.id = id;
 	}
-	
+
 	// clone function
 	public TxnNode(TxnNode n) {
-		super(n.id());
+		id = n.id;
 		type = n.type;
 		begin_timestamp = n.begin_timestamp;
 		commit_timestamp = n.commit_timestamp;
@@ -41,12 +42,16 @@ public class TxnNode extends AbsNode{
 		// clone all the ops
 		ops = new ArrayList<OpNode>();
 		for (OpNode op : n.ops) {
-			ops.add(new OpNode(op));
+			ops.add(op.clone());
 		}
 	}
-	
+
 	public long getTxnid() {
 		return id();
+	}
+
+	public long id() {
+		return id;
 	}
 
 	public TxnType getStatus() {
@@ -64,36 +69,36 @@ public class TxnNode extends AbsNode{
 	public OpNode get(int i) {
 		return ops.get(i);
 	}
-	
+
 	public void setClientId(int cid) {
 		assert client_id == VeriConstants.TXN_NULL_CLIENT_ID;
 		client_id = cid;
 	}
-	
+
 	public int getClientId() {
 		return client_id;
 	}
-	
+
 	public int getVersion() {
 		return version;
 	}
-	
+
 	public void setVersion(int v) {
 		version = v;
 	}
-	
+
 	public long getNextClientTxn() {
 		return next_client_txn;
 	}
-	
+
 	public void setNextClientTxn(long next) {
 		next_client_txn = next;
 	}
-	
+
 	public long getPrevClientTxn() {
 		return prev_client_txn;
 	}
-	
+
 	public void setPrevClientTxn(long prev) {
 		prev_client_txn = prev;
 	}
@@ -102,15 +107,15 @@ public class TxnNode extends AbsNode{
 		assert begin_timestamp == VeriConstants.TXN_NULL_TS;
 		begin_timestamp = ts;
 	}
-	
+
 	public long getBeginTimestamp() {
 		return begin_timestamp;
 	}
-	
+
 	public long getCommitTimestamp() {
 		return commit_timestamp;
 	}
-	
+
 	public void commit(long ts) {
 		type = TxnType.COMMIT;
 		commit_timestamp = ts;
@@ -127,12 +132,12 @@ public class TxnNode extends AbsNode{
 	public ArrayList<OpNode> getOps() {
 		return ops;
 	}
-	
+
 	public String toString() {
 		return "Txn[" + Long.toHexString(id()) + "][FZ:" + frozen + "][C:" + client_id + "-" + commit_timestamp + "][status:" + type + "][pV:" + prev_version + "][V:"
 				+ version + "][prev:" + Long.toHexString(prev_client_txn) + "][next:" + Long.toHexString(next_client_txn) + "]";
 	}
-	
+
 	public String toString3() {
 		return "Txn[" + Long.toHexString(id()) + "][FZ:" + frozen + "][C:" + client_id + "-" + commit_timestamp + "][pV:" + prev_version + "][V:"
 				+ version + "]";

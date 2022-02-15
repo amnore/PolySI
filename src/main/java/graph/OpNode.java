@@ -2,29 +2,41 @@ package graph;
 
 import verifier.AbstractVerifier;
 
-public class OpNode extends AbsNode {
-	
-	public boolean isRead;
-	public long txnid;
-	public long wid;
-	public long read_from_txnid;
-	public long key_hash;
-	public long val_hash;
-	public int pos;
-	public String key = null;
-	
-	
-	public OpNode(boolean isRead, long txnid, String key, long val_hash, long wid, long ptid,int pos) {
-		super(0);
-		assert false; // used by online GCer
+public class OpNode implements Cloneable {
+
+	// id of this op
+	public final long id;
+
+	// key and value read/written
+	public final long key_hash;
+	public final long val_hash;
+
+	public final boolean isRead;
+
+	// transaction this op belongs to
+	public final long txnid;
+
+	// for write, same as id
+	// for read, the op that is read
+	public final long wid;
+
+	// for write, 0
+	// for read, the txn that is read
+	public final long read_from_txnid;
+
+	// position in a txn, starting from 0
+	public final int pos;
+
+	public OpNode(boolean isRead, long txnid, String key, long val_hash, long wid, long ptid, int pos) {
+		throw new AssertionError();
 	}
-	
-	public OpNode(boolean isRead, long txnid, long key_hash,  long val_hash, long wid, long ptid,int pos) {
-		super(isRead ? 
-				((txnid << Integer.BYTES*8) + pos) :
-				wid); // FIXME: should guarantee the uniqueness! Assume read/write to one key in one txn
+
+	public OpNode(boolean isRead, long txnid, long key_hash, long val_hash, long wid, long ptid, int pos) {
+		id = isRead ?
+			((txnid << Integer.BYTES * 8) + pos) :
+			wid; // FIXME: should guarantee the uniqueness! Assume read/write to one key in one txn
 		assert pos != 0;
-		
+
 		this.isRead = isRead;
 		this.txnid = txnid;
 		this.key_hash = key_hash;
@@ -33,17 +45,20 @@ public class OpNode extends AbsNode {
 		this.read_from_txnid = ptid;
 		this.pos = pos;
 	}
-	
-	// the clone function
-	public OpNode(OpNode op) {
-		this(op.isRead, op.txnid, op.key_hash, op.val_hash, op.wid, op.read_from_txnid, op.pos);
-	}
-	
+
+	@Override
 	public String toString() {
-		return "Op[R=" + isRead + "][txnid=" + Long.toHexString(txnid) + "][wid=" + Long.toHexString(wid) + "][prv_txnid="
-				+ Long.toHexString(read_from_txnid) + "][keyhash=" + Long.toHexString(key_hash) + "][val="
-				+ Long.toHexString(val_hash) + "]";
+		return isRead
+			? String.format("Read[id=%x][txnid=%x][wid=%x][w_txnid=%x][key=%x][val=%x]", id, txnid, wid, read_from_txnid, key_hash, val_hash)
+			: String.format("Write[id=%x][txnid=%x][key=%x][value=%x]", id, txnid, key_hash, val_hash);
 	}
 
-
+	@Override
+	public OpNode clone() {
+		try {
+			return (OpNode) super.clone();
+		} catch (CloneNotSupportedException e) {
+			throw new AssertionError();
+		}
+	}
 }

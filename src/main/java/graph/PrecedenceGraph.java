@@ -19,6 +19,7 @@ import com.google.common.graph.ValueGraph;
 import com.google.common.graph.ValueGraphBuilder;
 
 import gpu.ReachabilityMatrix;
+import graph.TxnNode.TxnType;
 import util.ChengLogger;
 import util.Profiler;
 import util.VeriConstants;
@@ -27,22 +28,22 @@ import util.VeriConstants.LoggerType;
 
 // a wrapper for graph
 public class PrecedenceGraph {
-	
+
 	private MutableGraph<TxnNode> g;
 	// mapping txnid=>node
 	private HashMap<Long,TxnNode> tindex;
 	// read-from dependency, wid => {OpNode, ...}
 	public Map<Long, Set<OpNode>> m_readFromMapping = null;
-	
+
 	// remember all the WW dependencies
 	// NOTE: this is previous *write id* to current *write id* (not txn id)
 	private HashMap<Long,Long> wwpairs;
 	private HashMap<Long,Long> rev_wwpairs; // in order to efficiently delete a node
 
-	
-	
+
+
 	// ======Constructors========
-	
+
 	public PrecedenceGraph() {
 		g = GraphBuilder.directed().allowsSelfLoops(false).build();
 		tindex = new HashMap<Long, TxnNode>();
@@ -50,7 +51,7 @@ public class PrecedenceGraph {
 		wwpairs = new HashMap<Long,Long>();
 		rev_wwpairs = new HashMap<Long,Long>();
 	}
-	
+
 	// the clone function
 	public PrecedenceGraph(PrecedenceGraph old_graph) {
 		// get an empty graph
@@ -58,7 +59,7 @@ public class PrecedenceGraph {
 				.expectedNodeCount(old_graph.g.nodes().size())
 				.expectedNodeCount(old_graph.g.edges().size())
 				.build();
-		
+
 		// rebuild the nodes
 		tindex = new HashMap<Long, TxnNode>();
 		for (long txnid : old_graph.tindex.keySet()) {
@@ -69,7 +70,7 @@ public class PrecedenceGraph {
 			// add it to the current precedence graph
 			tindex.put(txnid, txn_new);
 		}
-		
+
 		// rebuild the edges
 		for (EndpointPair<TxnNode> e : old_graph.allEdges()) {
 			TxnNode new_src = tindex.get(e.source().getTxnid());
@@ -77,18 +78,18 @@ public class PrecedenceGraph {
 			// FIXME: how to retrieve value of the edge?
 			g.putEdge(new_src, new_dst);
 		}
-		
+
 		// rebuild the read-from mapping
 		m_readFromMapping = new HashMap<Long,Set<OpNode>>();
 		for (long wid : old_graph.m_readFromMapping.keySet()) {
 			m_readFromMapping.put(wid, new HashSet<OpNode>(old_graph.m_readFromMapping.get(wid)));
 		}
-		
+
 		// rebuild the wwpairs
 		wwpairs = new HashMap<Long,Long>(old_graph.wwpairs);
 		rev_wwpairs = new HashMap<Long,Long>(old_graph.rev_wwpairs);
 	}
-	
+
 	// FIXME: UGLY CODE!
 	// the no-clone clone function
 	public PrecedenceGraph(PrecedenceGraph old_graph, boolean clone) {
@@ -97,7 +98,7 @@ public class PrecedenceGraph {
 				.expectedNodeCount(old_graph.g.nodes().size())
 				.expectedNodeCount(old_graph.g.edges().size())
 				.build();
-		
+
 		// rebuild the nodes
 		tindex = new HashMap<Long, TxnNode>();
 		for (long txnid : old_graph.tindex.keySet()) {
@@ -108,7 +109,7 @@ public class PrecedenceGraph {
 			// add it to the current precedence graph
 			tindex.put(txnid, txn);
 		}
-		
+
 		// rebuild the edges
 		for (EndpointPair<TxnNode> e : old_graph.allEdges()) {
 			TxnNode new_src = tindex.get(e.source().getTxnid());
@@ -116,72 +117,72 @@ public class PrecedenceGraph {
 			// FIXME: how to retrieve value of the edge?
 			g.putEdge(new_src, new_dst);
 		}
-		
+
 		// rebuild the read-from mapping
 		m_readFromMapping = new HashMap<Long,Set<OpNode>>();
 		for (long wid : old_graph.m_readFromMapping.keySet()) {
 			m_readFromMapping.put(wid, new HashSet<OpNode>(old_graph.m_readFromMapping.get(wid)));
 		}
-		
+
 		// rebuild the wwpairs
 		wwpairs = new HashMap<Long,Long>(old_graph.wwpairs);
 		rev_wwpairs = new HashMap<Long,Long>(old_graph.rev_wwpairs);
 	}
-	
+
 	// ======Graph=======
-	
+
 	public MutableGraph<TxnNode> getGraph() {
 		return g;
 	}
-	
+
 
 	// =======Nodes=========
-	
+
 	public Collection<TxnNode> allNodes() {
 		return tindex.values();
 	}
-	
+
 	public Set<Long> allTxnids() {
 		return tindex.keySet();
 	}
-	
+
 	public boolean containTxnid(long id) {
 		return tindex.containsKey(id);
 	}
-	
+
 	public TxnNode getNode(long id) {
 		if (tindex.containsKey(id)) {
 			return tindex.get(id);
 		}
 		return null;
 	}
-	
+
 	public void addTxnNode(TxnNode n) {
 		// because of the inconsistency of logs, we may create an empty node,
 		assert !tindex.containsKey(n.getTxnid());
 		g.addNode(n);
 		tindex.put(n.getTxnid(), n);
 	}
-	
+
 	public Set<TxnNode> successors(TxnNode n) {
 		return g.successors(n);
 	}
-	
+
 	public Set<TxnNode> predecessors(TxnNode n) {
 		return g.predecessors(n);
 	}
-	
+
 	public int numPredecessor(TxnNode n) {
 		return g.inDegree(n);
 	}
-	
+
 	public int numSuccessor(TxnNode n) {
 		return g.outDegree(n);
 	}
-	
+
 	public void deleteNodeSimple(TxnNode n) {
 		assert n.getTxnid() != VeriConstants.INIT_TXN_ID;
-		
+
 		// NOTE: we need also to update the prev/next client txns!
 		long prev_tid = n.getPrevClientTxn();
 		long next_tid = n.getNextClientTxn();
@@ -194,10 +195,10 @@ public class PrecedenceGraph {
 			getNode(next_tid).setPrevClientTxn(prev_tid);
 		}
 		// for all ops, remove from m_readFromMapping
-		for (OpNode op : n.getOps()) {	
+		for (OpNode op : n.getOps()) {
 			if (op.isRead) {
-				long prev_wid = op.wid;	
-				if (m_readFromMapping.containsKey(prev_wid)) {			
+				long prev_wid = op.wid;
+				if (m_readFromMapping.containsKey(prev_wid)) {
 					boolean done = m_readFromMapping.get(prev_wid).remove(op);
 					if(!done) {
 						//System.out.println(n.toString2());
@@ -220,7 +221,7 @@ public class PrecedenceGraph {
 				long wid = op.wid;
 				Long prev_wid = rev_wwpairs.get(wid);
 				Long next_wid = wwpairs.get(wid);
-				
+
 				if (prev_wid != null) {
 					assert wwpairs.get(prev_wid) == wid;
 					wwpairs.remove(prev_wid);
@@ -235,17 +236,17 @@ public class PrecedenceGraph {
 				if (prev_wid != null && next_wid != null) {
 					wwpairs.put(prev_wid, next_wid);
 					rev_wwpairs.put(next_wid, prev_wid);
-				}			
+				}
 			}
 		}
 		// remove from the graph
 		g.removeNode(n);
 		tindex.remove(n.getTxnid());
 	}
-	
+
 	public void deleteNodeConnected(TxnNode n) {
 		Profiler prof = Profiler.getInstance();
-	
+
 		// connect the immediate predecessors and immediate successors
 		for (TxnNode pred : predecessors(n)) {
 			// all txns are the successors of INIT
@@ -258,69 +259,69 @@ public class PrecedenceGraph {
 		// delete the node from the Precedencegraph
 		deleteNodeSimple(n);
 	}
-	
+
 	// =====Edges=====
-	
+
 	public Set<EndpointPair<TxnNode>> allEdges() {
 		return g.edges();
 	}
-	
+
 	public void addEdge(long fr, long to, EdgeType et) {
 		assert tindex.containsKey(fr) && tindex.containsKey(to);
 		TxnNode src = tindex.get(fr);
 		TxnNode dst = tindex.get(to);
 		g.putEdge(src, dst);
 	}
-	
+
 	public void addEdge(TxnNode fr, TxnNode to, EdgeType et) {
 		assert tindex.containsKey(fr.getTxnid()) && tindex.containsKey(to.getTxnid());
 		g.putEdge(fr, to);
 	}
-	
+
 	// =====WR dependency=====
-	
+
 	public Set<OpNode> getReadFromNodes(long wid) {
 		if (m_readFromMapping.containsKey(wid)) {
 			return m_readFromMapping.get(wid);
 		}
 		return null;
 	}
-	
+
 	// =====WW dependency=====
-	
+
 	public Map<Long, Long> getWWpairs() {
 		return wwpairs;
 	}
-	
+
 	public Map<Long, Long> getRevWWparis() {
 		return rev_wwpairs;
 	}
-	
+
 	public long getWW(long wid) {
 		if (wwpairs.containsKey(wid)) {
 			return wwpairs.get(wid);
 		}
 		return VeriConstants.MISSING_WRITE_ID;
 	}
-	
+
 	public long getPrevWW(long wid) {
 		if (rev_wwpairs.containsKey(wid)) {
 			return rev_wwpairs.get(wid);
 		}
 		return VeriConstants.MISSING_WRITE_ID;
 	}
-	
+
 	public void addWW(long prev_wid, long cur_wid, long key) {
 		if (prev_wid == VeriConstants.MISSING_WRITE_ID || prev_wid == VeriConstants.NULL_WRITE_ID) return;
 		// NOTE: prev_wid == INIT_WRITE_ID should be included here
-		
+
 		if (wwpairs.containsKey(prev_wid)) {
 			if (cur_wid != wwpairs.get(prev_wid)) {
 				ChengLogger.println(LoggerType.ERROR, Long.toHexString(prev_wid) +
 						"=> cur_wid[" + Long.toHexString(cur_wid) +
 						"], prev_nxt_wid[" + Long.toHexString(wwpairs.get(prev_wid))+"]");
 				// details
-				
+
 				// find txnid for these wids
 				long prev_nxt_wid = wwpairs.get(prev_wid);
 				TxnNode prev_node = null;  // prev_wid
@@ -355,22 +356,22 @@ public class PrecedenceGraph {
 			rev_wwpairs.put(cur_wid, prev_wid);
 		}
 	}
-	
+
 	// =====subgraph=====
 	/*
 	// mapping txnid=>node
 	private HashMap<Long,TxnNode> txns;
-	
+
 	// remember all the WW dependencies
 	// NOTE: this is previous *write id* to current *write id* (not txn id)
 	private HashMap<Long,Long> wwpairs;
 	*/
-	
+
 	public PrecedenceGraph subgraph(Set<Long> sub_txnids) {
 		PrecedenceGraph pg = new PrecedenceGraph();
 		Set<Long> wid_set = new HashSet<Long>();
 		Map<Long, OpNode> read_set = new HashMap<Long, OpNode>();
-		
+
 		// add all vertices
 		for (long txnid : sub_txnids) {
 			// clone the txnNode using new node from "g"
@@ -378,15 +379,15 @@ public class PrecedenceGraph {
 			pg.addTxnNode(txn_new);
 			// construct read_set/wid_set, for latter use
 			for (OpNode op : txn_new.getOps()) {
-				if (op.isRead) {				
-					assert !read_set.containsKey(op.id()); // op id should not duplicate
-					read_set.put(op.id(), op);
+				if (op.isRead) {
+					assert !read_set.containsKey(op.id); // op id should not duplicate
+					read_set.put(op.id, op);
 				} else {
 					wid_set.add(op.wid);
 				}
 			}
 		}
-		
+
 		// add all edges
 		for (long txnid : sub_txnids) {
 			// we only care the outdegree for each node
@@ -403,7 +404,7 @@ public class PrecedenceGraph {
 				}
 			}
 		}
-		
+
 		// construct readFromMapping, wwpairs and rev_wwpairs
 		for (long txnid : sub_txnids) {
 			for (OpNode op : pg.getNode(txnid).getOps()) {
@@ -414,8 +415,8 @@ public class PrecedenceGraph {
 						Set<OpNode> tmp_readset = new HashSet<OpNode>();
 						for (OpNode rop : m_readFromMapping.get(op.wid)) {
 							// UTBABUG: "pg" and "this" have different OpNodes.
-							if (read_set.keySet().contains(rop.id())) {
-								OpNode pg_rop = read_set.get(rop.id());
+							if (read_set.keySet().contains(rop.id)) {
+								OpNode pg_rop = read_set.get(rop.id);
 								tmp_readset.add(pg_rop);
 							}
 						}
@@ -435,18 +436,18 @@ public class PrecedenceGraph {
 				}
 			}
 		}
-		
+
 		if (VeriConstants.HEAVY_VALIDATION_CODE_ON) {
 			pg.ValidateGraph(true);
 		}
 
 		return pg;
 	}
-	
+
 
 	public PrecedenceGraph subgraphNoClone(Collection<TxnNode> sub_txns) {
 		PrecedenceGraph pg = new PrecedenceGraph();
-		
+
 		// construct the subgraph
 		pg.g = Graphs.inducedSubgraph(this.g, sub_txns);
 
@@ -458,9 +459,9 @@ public class PrecedenceGraph {
 			pg.tindex.put(txn.getTxnid(), txn);
 			// construct read_set/wid_set, for latter use
 			for (OpNode op : txn.getOps()) {
-				if (op.isRead) {				
-					assert !read_set.containsKey(op.id()); // op id should not duplicate
-					read_set.put(op.id(), op);
+				if (op.isRead) {
+					assert !read_set.containsKey(op.id); // op id should not duplicate
+					read_set.put(op.id, op);
 				} else {
 					wid_set.add(op.wid);
 				}
@@ -472,12 +473,12 @@ public class PrecedenceGraph {
 			for (OpNode op : txn.getOps()) {
 				if (!op.isRead) {
 					// construct readFromMapping
-					if (m_readFromMapping.containsKey(op.wid)) {	
+					if (m_readFromMapping.containsKey(op.wid)) {
 						assert !pg.m_readFromMapping.containsKey(op.wid); // should never meet this wid
 						Set<OpNode> tmp_readset = new HashSet<OpNode>();
 						for (OpNode rop : m_readFromMapping.get(op.wid)) {
-							if (read_set.keySet().contains(rop.id())) {
-								OpNode pg_rop = read_set.get(rop.id());
+							if (read_set.keySet().contains(rop.id)) {
+								OpNode pg_rop = read_set.get(rop.id);
 								tmp_readset.add(pg_rop);
 							}
 						}
@@ -497,14 +498,14 @@ public class PrecedenceGraph {
 				}
 			}
 		}
-		
+
 		if (VeriConstants.HEAVY_VALIDATION_CODE_ON) {
 			pg.ValidateGraph(true);
 		}
 
 		return pg;
 	}
-	
+
 	public void ValidateGraph(boolean subgraph) {
 		// make sure no write wid == INIT_WID
 		assert !m_readFromMapping.containsKey(VeriConstants.INIT_WRITE_ID);
@@ -547,9 +548,9 @@ public class PrecedenceGraph {
 			// write this read reads-from.
 			//assert all_wids.contains(prv);
 		}
-		
+
 		if (subgraph) return;
-		
+
 		// make sure INIT exists
 		assert this.containTxnid(VeriConstants.INIT_TXN_ID);
 		// make sure "TxnNode.pre/next" <~> "g"
@@ -575,7 +576,7 @@ public class PrecedenceGraph {
 			total_txns += num_tx_in_c;
 		}
 		assert total_txns == this.allNodes().size();
-		
+
 		// one client should have one chain
 		for (TxnNode f : first_txn.values()) {
 			int cid = f.getClientId();
@@ -586,9 +587,9 @@ public class PrecedenceGraph {
 				counter++;
 				tmp = tindex.get(tmp.getNextClientTxn());
 			}
-			
-			
-			
+
+
+
 			if (counter != num_per_client.get(cid)) {
 				System.out.println("counte => " + counter + ",   num_per_client=>" + num_per_client.get(cid));
 				System.out.println("  cid = " + cid);
@@ -605,15 +606,15 @@ public class PrecedenceGraph {
 					}
 				}
 			}
-			
-			
-			
-			
-			
+
+
+
+
+
 			assert counter == num_per_client.get(cid);
 		}
 	}
-	
+
 	public String toString() {
 		StringBuilder ret = new StringBuilder();
 		ret.append("PrecedenceGraph. #txn=" + allNodes().size() + " #edges=" + allEdges().size() + "\n");
@@ -621,11 +622,11 @@ public class PrecedenceGraph {
 		ret.append("                 #w_has_read=" + m_readFromMapping.size() + "\n");
 		return ret.toString();
 	}
-	
+
 	public String toString2() {
 		return g.toString();
 	}
-	
+
 	// complete the incomplete precedence graph
 	public static PrecedenceGraph CompletePrecedenceGraph(
 			PrecedenceGraph in_pg,
@@ -633,7 +634,7 @@ public class PrecedenceGraph {
 	{
 		// clone graph
 		PrecedenceGraph comp_pg = new PrecedenceGraph(in_pg);
-		
+
 		// add WW-edge for each WW-pair
 		for (LinkedList<OpNode> wlist : write_orders) {
 			long key = wlist.get(0).key_hash;
@@ -645,19 +646,19 @@ public class PrecedenceGraph {
 					continue;
 				}
 				cur = wnode;
-				
+
 				long prev_txnid = prev.txnid;
 				long prev_wid = prev.wid;
 				long cur_txnid = cur.txnid;
-				
+
 				// add WW-edge for the txns
 				if (prev_txnid != cur_txnid) {
 					comp_pg.addEdge(prev_txnid, cur_txnid, EdgeType.WW);
 				}
-				
+
 				// if there are R-op reads-from prev write, should add RW-edge
 				if (in_pg.m_readFromMapping.containsKey(prev_wid)) {
-					for (OpNode op : in_pg.m_readFromMapping.get(prev_wid)) {	
+					for (OpNode op : in_pg.m_readFromMapping.get(prev_wid)) {
 						// UTBABUG: readFromMapping can have nodes beyond current subgraph
 						// FIXME: readFromMapping should be combined with PrecedenceGraph!
 						if (comp_pg.getNode(op.txnid)!=null && // if subgraph has this node
@@ -667,11 +668,11 @@ public class PrecedenceGraph {
 						}
 					}
 				}
-				
+
 				prev = cur;
 			}
 		}
-		
+
 		return comp_pg;
 	}
 
