@@ -2,7 +2,7 @@ package graph;
 
 import verifier.AbstractVerifier;
 
-public class OpNode implements Cloneable {
+public class OpNode {
 
 	// id of this op
 	public final long id;
@@ -51,14 +51,5 @@ public class OpNode implements Cloneable {
 		return isRead
 			? String.format("Read[id=%x][txnid=%x][wid=%x][w_txnid=%x][key=%x][val=%x]", id, txnid, wid, read_from_txnid, key_hash, val_hash)
 			: String.format("Write[id=%x][txnid=%x][key=%x][value=%x]", id, txnid, key_hash, val_hash);
-	}
-
-	@Override
-	public OpNode clone() {
-		try {
-			return (OpNode) super.clone();
-		} catch (CloneNotSupportedException e) {
-			throw new AssertionError();
-		}
 	}
 }

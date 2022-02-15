@@ -4,46 +4,51 @@ import java.util.ArrayList;
 
 import util.VeriConstants;
 
-public class TxnNode {
+public class TxnNode implements Cloneable {
+
+	public long getNextClientTxn() {
+		return next_client_txn;
+	}
+
+	public long getPreviousClientTxn() {
+		return prev_client_txn;
+	}
 
 	public enum TxnType {
 		ONGOING, COMMIT, ABORT, STALE,
 	};
 
-	// attributes
-	long id;
-	TxnType type = TxnType.ONGOING;
-	ArrayList<OpNode> ops = new ArrayList<OpNode>();
-	long begin_timestamp = VeriConstants.TXN_NULL_TS;
-	long commit_timestamp = VeriConstants.TXN_NULL_TS;
-	long next_client_txn = VeriConstants.NULL_TXN_ID;
-	long prev_client_txn = VeriConstants.NULL_TXN_ID;
-	int client_id = VeriConstants.TXN_NULL_CLIENT_ID;
-	int version = VeriConstants.TXN_NULL_VERSION;
-	public int prev_version = VeriConstants.TXN_NULL_VERSION;
-	public boolean frozen = false;  // used also as monitoring
+	// id of this txn
+	public final long id;
 
+	// txn state
+	private TxnType type = TxnType.ONGOING;
+
+	// ops in txn
+	ArrayList<OpNode> ops = new ArrayList<OpNode>();
+
+	// start and commit time
+	public final long begin_timestamp;
+	private long commit_timestamp = VeriConstants.TXN_NULL_TS;
+
+	// prev and next txn of this client
+	private long next_client_txn = VeriConstants.NULL_TXN_ID;
+	private long prev_client_txn = VeriConstants.NULL_TXN_ID;
+
+	public final int client_id;
+	public final boolean frozen = false;  // used also as monitoring
+
+
+	public TxnNode(long id, long beginTimestamp, int clientId) {
+		this.id = id;
+		begin_timestamp = beginTimestamp;
+		client_id = clientId;
+	}
 
 	public TxnNode(long id) {
 		this.id = id;
-	}
-
-	// clone function
-	public TxnNode(TxnNode n) {
-		id = n.id;
-		type = n.type;
-		begin_timestamp = n.begin_timestamp;
-		commit_timestamp = n.commit_timestamp;
-		next_client_txn = n.next_client_txn;
-		prev_client_txn = n.prev_client_txn;
-		client_id = n.client_id;
-		version = n.version;
-		prev_version = n.prev_version;
-		// clone all the ops
-		ops = new ArrayList<OpNode>();
-		for (OpNode op : n.ops) {
-			ops.add(op.clone());
-		}
+		begin_timestamp = VeriConstants.TXN_NULL_TS;
+		client_id = VeriConstants.TXN_NULL_CLIENT_ID;
 	}
 
 	public long getTxnid() {
@@ -54,14 +59,6 @@ public class TxnNode {
 		return id;
 	}
 
-	public TxnType getStatus() {
-		return type;
-	}
-
-	public void setStatus(TxnType t) {
-		type = t;
-	}
-
 	public int size() {
 		return ops.size();
 	}
@@ -70,59 +67,22 @@ public class TxnNode {
 		return ops.get(i);
 	}
 
-	public void setClientId(int cid) {
-		assert client_id == VeriConstants.TXN_NULL_CLIENT_ID;
-		client_id = cid;
-	}
-
-	public int getClientId() {
-		return client_id;
-	}
-
-	public int getVersion() {
-		return version;
-	}
-
-	public void setVersion(int v) {
-		version = v;
-	}
-
-	public long getNextClientTxn() {
-		return next_client_txn;
-	}
-
-	public void setNextClientTxn(long next) {
-		next_client_txn = next;
-	}
-
-	public long getPrevClientTxn() {
-		return prev_client_txn;
-	}
-
-	public void setPrevClientTxn(long prev) {
-		prev_client_txn = prev;
-	}
-
-	public void setBeginTimestamp(long ts) {
-		assert begin_timestamp == VeriConstants.TXN_NULL_TS;
-		begin_timestamp = ts;
-	}
-
-	public long getBeginTimestamp() {
-		return begin_timestamp;
-	}
-
-	public long getCommitTimestamp() {
-		return commit_timestamp;
-	}
-
-	public void commit(long ts) {
+	public void commit(long ts, TxnNode prevTxn) {
 		type = TxnType.COMMIT;
 		commit_timestamp = ts;
+
+		if (prevTxn != null) {
+			prevTxn.next_client_txn = id;
+			prev_client_txn = prevTxn.id;
+		}
 	}
 
-	public void abort() {
-		type = TxnType.ABORT;
+	public TxnType type() {
+		return type;
+	}
+
+	public long commitTimestamp() {
+		return commit_timestamp;
 	}
 
 	public void appendOp(OpNode op) {
@@ -134,24 +94,40 @@ public class TxnNode {
 	}
 
 	public String toString() {
-		return "Txn[" + Long.toHexString(id()) + "][FZ:" + frozen + "][C:" + client_id + "-" + commit_timestamp + "][status:" + type + "][pV:" + prev_version + "][V:"
-				+ version + "][prev:" + Long.toHexString(prev_client_txn) + "][next:" + Long.toHexString(next_client_txn) + "]";
+		return "Txn[" + Long.toHexString(id()) +
+			"][FZ:" + frozen +
+			"][C:" + client_id + "-" + commit_timestamp +
+			"][status:" + type +
+			"][prev:" + Long.toHexString(getPreviousClientTxn()) +
+			"][next:" + Long.toHexString(getNextClientTxn()) + "]";
 	}
 
 	public String toString3() {
-		return "Txn[" + Long.toHexString(id()) + "][FZ:" + frozen + "][C:" + client_id + "-" + commit_timestamp + "][pV:" + prev_version + "][V:"
-				+ version + "]";
+		return "Txn[" + Long.toHexString(id()) + "][FZ:" + frozen + "][C:" + client_id + "-" + commit_timestamp + "]";
 	}
 
 	public String toString2() {
 		StringBuilder sb = new StringBuilder();
-		sb.append("Txn[" + Long.toHexString(id()) + "][FZ:" + frozen + "][C:" + client_id + "-" + commit_timestamp + "][status:" + type + "][pV:" + prev_version
-				+ "][V:" + version + "][prev:" + Long.toHexString(prev_client_txn) + "][next:"
-				+ Long.toHexString(next_client_txn) + "] {\n");
+		sb.append("Txn[" + Long.toHexString(id()) +
+			"][FZ:" + frozen +
+			"][C:" + client_id + "-" + commit_timestamp +
+			"][status:" + type + "]{\n");
 		for (OpNode op : ops) {
 			sb.append("    " + op + "\n");
 		}
 		sb.append("}\n");
 		return sb.toString();
 	}
+
+	@Override
+	public TxnNode clone() {
+		try {
+			TxnNode clone = (TxnNode) super.clone();
+			clone.ops = (ArrayList<OpNode>) ops.clone();
+			return clone;
+		} catch (CloneNotSupportedException e) {
+			throw new AssertionError();
+		}
+	}
+
 }

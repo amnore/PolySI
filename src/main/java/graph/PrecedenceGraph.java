@@ -5,23 +5,16 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import com.google.common.graph.EndpointPair;
-import com.google.common.graph.Graph;
 import com.google.common.graph.GraphBuilder;
 import com.google.common.graph.Graphs;
 import com.google.common.graph.MutableGraph;
-import com.google.common.graph.MutableValueGraph;
-import com.google.common.graph.ValueGraph;
-import com.google.common.graph.ValueGraphBuilder;
 
-import gpu.ReachabilityMatrix;
 import graph.TxnNode.TxnType;
 import util.ChengLogger;
-import util.Profiler;
 import util.VeriConstants;
 import util.VeriConstants.LoggerType;
 
@@ -64,7 +57,7 @@ public class PrecedenceGraph {
 		tindex = new HashMap<Long, TxnNode>();
 		for (long txnid : old_graph.tindex.keySet()) {
 			// clone the txnNode using new node from "g"
-			TxnNode txn_new = new TxnNode(old_graph.tindex.get(txnid));
+			TxnNode txn_new = old_graph.tindex.get(txnid).clone();
 			// add it to graph
 			g.addNode(txn_new);
 			// add it to the current precedence graph
@@ -178,86 +171,6 @@ public class PrecedenceGraph {
 
 	public int numSuccessor(TxnNode n) {
 		return g.outDegree(n);
-	}
-
-	public void deleteNodeSimple(TxnNode n) {
-		assert n.getTxnid() != VeriConstants.INIT_TXN_ID;
-
-		// NOTE: we need also to update the prev/next client txns!
-		long prev_tid = n.getPrevClientTxn();
-		long next_tid = n.getNextClientTxn();
-		if (prev_tid != VeriConstants.NULL_TXN_ID) {
-			assert tindex.containsKey(prev_tid);
-			getNode(prev_tid).setNextClientTxn(next_tid);
-		}
-		if (next_tid != VeriConstants.NULL_TXN_ID) {
-			assert tindex.containsKey(next_tid);
-			getNode(next_tid).setPrevClientTxn(prev_tid);
-		}
-		// for all ops, remove from m_readFromMapping
-		for (OpNode op : n.getOps()) {
-			if (op.isRead) {
-				long prev_wid = op.wid;
-				if (m_readFromMapping.containsKey(prev_wid)) {
-					boolean done = m_readFromMapping.get(prev_wid).remove(op);
-					if(!done) {
-						//System.out.println(n.toString2());
-						assert op.read_from_txnid == VeriConstants.INIT_TXN_ID; // FIXME: why?
-					}
-					// if empty, remove this
-					if (m_readFromMapping.get(prev_wid).size() == 0) {
-						m_readFromMapping.remove(prev_wid);
-					}
-				}
-			} else {
-				// remove the write directly
-				m_readFromMapping.remove(op.wid);
-			}
-		}
-		// connect wwpair, if possible
-		//  w1-ww->w2-ww->w3  ==[delete w2]==> w1-ww->w3
-		for (OpNode op : n.getOps()) {
-			if (!op.isRead) {
-				long wid = op.wid;
-				Long prev_wid = rev_wwpairs.get(wid);
-				Long next_wid = wwpairs.get(wid);
-
-				if (prev_wid != null) {
-					assert wwpairs.get(prev_wid) == wid;
-					wwpairs.remove(prev_wid);
-					rev_wwpairs.remove(wid);
-				}
-				if (next_wid != null) {
-					assert rev_wwpairs.get(next_wid) == wid;
-					wwpairs.remove(wid);
-					rev_wwpairs.remove(next_wid);
-				}
-				// FIXME: is it possible that w1-ww->w2, but in precedence graph w1 cannot reach w2?
-				if (prev_wid != null && next_wid != null) {
-					wwpairs.put(prev_wid, next_wid);
-					rev_wwpairs.put(next_wid, prev_wid);
-				}
-			}
-		}
-		// remove from the graph
-		g.removeNode(n);
-		tindex.remove(n.getTxnid());
-	}
-
-	public void deleteNodeConnected(TxnNode n) {
-		Profiler prof = Profiler.getInstance();
-
-		// connect the immediate predecessors and immediate successors
-		for (TxnNode pred : predecessors(n)) {
-			// all txns are the successors of INIT
-			if (pred.getTxnid() == VeriConstants.INIT_TXN_ID) {continue;}
-			for (TxnNode succ : successors(n)) {
-				this.addEdge(pred, succ, EdgeType.DEL_CONNECTED);
-			}
-		}
-
-		// delete the node from the Precedencegraph
-		deleteNodeSimple(n);
 	}
 
 	// =====Edges=====
@@ -375,7 +288,7 @@ public class PrecedenceGraph {
 		// add all vertices
 		for (long txnid : sub_txnids) {
 			// clone the txnNode using new node from "g"
-			TxnNode txn_new = new TxnNode(this.tindex.get(txnid));
+			TxnNode txn_new = this.tindex.get(txnid).clone();
 			pg.addTxnNode(txn_new);
 			// construct read_set/wid_set, for latter use
 			for (OpNode op : txn_new.getOps()) {
@@ -558,12 +471,12 @@ public class PrecedenceGraph {
 		Map<Integer,TxnNode> first_txn = new HashMap<Integer, TxnNode>();
 		Map<Integer, Integer> num_per_client = new HashMap<Integer, Integer>();
 		for (TxnNode n : this.allNodes()) {
-			int cid = n.getClientId();
+			int cid = n.client_id;
 			if (!first_txn.containsKey(cid)) {
 				num_per_client.put(cid, 1);
 				TxnNode tmp = n;
-				while(tmp.getPrevClientTxn() != VeriConstants.NULL_TXN_ID) {
-					tmp = tindex.get(tmp.getPrevClientTxn());
+				while(tmp.getPreviousClientTxn() != VeriConstants.NULL_TXN_ID) {
+					tmp = tindex.get(tmp.getPreviousClientTxn());
 				}
 				first_txn.put(cid, tmp);
 			} else {
@@ -579,7 +492,7 @@ public class PrecedenceGraph {
 
 		// one client should have one chain
 		for (TxnNode f : first_txn.values()) {
-			int cid = f.getClientId();
+			int cid = f.client_id;
 			if (cid == VeriConstants.TXN_NULL_CLIENT_ID) continue;
 			int counter = 1;
 			TxnNode tmp = f;
@@ -682,7 +595,7 @@ public class PrecedenceGraph {
 	 */
 	public boolean isComplete() {
 		for (var txn : allNodes()) {
-			if (txn.getStatus() != TxnType.COMMIT
+			if (txn.type() != TxnType.COMMIT
 					&& txn.getTxnid() != VeriConstants.INIT_TXN_ID) {
 				return false;
 			}

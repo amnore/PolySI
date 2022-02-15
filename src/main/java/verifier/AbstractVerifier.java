@@ -3,8 +3,6 @@ package verifier;
 import java.io.DataInputStream;
 import java.io.EOFException;
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -12,24 +10,17 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
-
-import com.google.common.io.ByteArrayDataInput;
-import com.google.common.io.ByteArrayDataOutput;
-import com.google.common.io.ByteStreams;
 
 import graph.EdgeType;
 import graph.OpNode;
 import graph.PrecedenceGraph;
 import graph.TxnNode;
 import graph.TxnNode.TxnType;
-import kvClient.GarbageCollector;
 import net.openhft.hashing.LongHashFunction;
 import util.ChengLogger;
-import util.Pair;
 import util.Profiler;
 import util.VeriConstants;
 import util.VeriConstants.LoggerType;
@@ -195,7 +186,7 @@ public abstract class AbstractVerifier {
 
 		TxnNode cur_txn = null;
 		TxnNode prev_txn = g.getNode(recent_txnid); // will be null if there is no such txn
-		assert prev_txn == null /*init*/ || prev_txn.getClientId() == client_id;
+		assert prev_txn == null /*init*/ || prev_txn.client_id == client_id;
 		char op_type;
 		int op_counter = 0;
 		long wid = 0, key_hash = 0, val_hash = 0, prev_txnid = 0, txnid = 0;
@@ -223,18 +214,12 @@ public abstract class AbstractVerifier {
 				//  1. in graph and ongoing:    continue (previous txn reads this txn)
 				//  2. never seen:              new TxnNode & continue
 				if (cur_txn != null) { // case 1
-					assert cur_txn.getStatus() == TxnType.ONGOING;
+					assert cur_txn.type() == TxnType.ONGOING;
 					assert cur_txn.getOps().size() == 0;
 				} else {  // case 2
-					cur_txn = new TxnNode(txnid);
+					var beginTs = VeriConstants.TIME_ORDER_ON ? in.readLong() : Math.abs(txnid << 3);
+					cur_txn = new TxnNode(txnid, beginTs, client_id);
 					g.addTxnNode(cur_txn);
-				}
-				cur_txn.setClientId(client_id);
-				if (VeriConstants.TIME_ORDER_ON) {
-					long ts = in.readLong();
-					cur_txn.setBeginTimestamp(ts);
-				} else {
-					cur_txn.setBeginTimestamp(Math.abs(txnid<<3));
 				}
 				//System.out.print("S[" + Long.toHexString(txnid) + "]->");
 				op_counter = 0;
@@ -246,9 +231,9 @@ public abstract class AbstractVerifier {
 				assert txnid == cur_txn.getTxnid();
 				if (VeriConstants.TIME_ORDER_ON) {
 					long ts = in.readLong();
-					cur_txn.commit(ts);
+					cur_txn.commit(ts, prev_txn);
 				} else {
-					cur_txn.commit(txn_counter++);
+					cur_txn.commit(txn_counter++, prev_txn);
 				}
 				// FIXME: which is better? (1) add edges from init to all txns; or (2) add edges
 				// to only those without predecessor
@@ -257,8 +242,6 @@ public abstract class AbstractVerifier {
 				if (prev_txn != null) {
 					g.addEdge(prev_txn, cur_txn, EdgeType.CO);
 					this.num_co++;
-					prev_txn.setNextClientTxn(cur_txn.getTxnid()); // link the client order
-					cur_txn.setPrevClientTxn(prev_txn.getTxnid());
 				}
 				// extract read-modify-write
 				if (VeriConstants.RMW_EXTRACTION) {
@@ -532,7 +515,7 @@ public abstract class AbstractVerifier {
 		if (event.begin) {
 			// there should be a TO order for ww
 			for (TxnBeginEndEvent e : frontier) {
-				assert e.txn.getCommitTimestamp() < event.timestamp; // because the events are sorted
+				assert e.txn.commitTimestamp() < event.timestamp; // because the events are sorted
 				g.addEdge(e.txn.getTxnid(), event.txn.getTxnid(), EdgeType.TO);
 				// System.out.println(" TO: TXN[" + Long.toHexString(e.txn.getTxnid()) + "] ->
 				// [" + Long.toHexString(cur_event.txn.getTxnid()) + "]");
@@ -543,7 +526,7 @@ public abstract class AbstractVerifier {
 		} else { // this is end event
 			Set<TxnBeginEndEvent> rm_events = new HashSet<TxnBeginEndEvent>();
 			for (TxnBeginEndEvent e : frontier) {
-				if (e.txn.getCommitTimestamp() < event.txn.getBeginTimestamp()) {
+				if (e.txn.commitTimestamp() < event.txn.begin_timestamp) {
 					rm_events.add(e);
 				}
 			}
@@ -565,8 +548,8 @@ public abstract class AbstractVerifier {
 		// UTBABUG: timestamps are not unique
 		Map<Long, List<TxnBeginEndEvent>> all_events = new HashMap<Long,List<TxnBeginEndEvent>>();
 		for (TxnNode txn : g.allNodes()) {
-			long begin_ts = txn.getBeginTimestamp();
-			long commit_ts = txn.getCommitTimestamp();
+			long begin_ts = txn.begin_timestamp;
+			long commit_ts = txn.commitTimestamp();
 			if (!all_events.containsKey(begin_ts)) {
 				all_events.put(begin_ts, new LinkedList<TxnBeginEndEvent>());
 			}
@@ -627,8 +610,8 @@ public abstract class AbstractVerifier {
 		// UTBABUG: timestamps are not unique
 		Map<Long, List<TxnBeginEndEvent>> all_events = new HashMap<Long,List<TxnBeginEndEvent>>();
 		for (TxnNode txn : g.allNodes()) {
-			long begin_ts = txn.getBeginTimestamp();
-			long commit_ts = txn.getCommitTimestamp();
+			long begin_ts = txn.begin_timestamp;
+			long commit_ts = txn.commitTimestamp();
 
 			all_events.putIfAbsent(begin_ts, new LinkedList<TxnBeginEndEvent>());
 			all_events.putIfAbsent(commit_ts, new LinkedList<TxnBeginEndEvent>());
@@ -660,7 +643,7 @@ public abstract class AbstractVerifier {
 					// TO order when I found: commit.timestamp + drift < begin.timestamp
 					for (TxnBeginEndEvent e : frontier) {
 						assert !e.begin;
-						if (e.txn.getCommitTimestamp() + VeriConstants.TIME_DRIFT_THRESHOLD < cur_event.timestamp) {
+						if (e.txn.commitTimestamp() + VeriConstants.TIME_DRIFT_THRESHOLD < cur_event.timestamp) {
 							g.addEdge(e.txn.getTxnid(), cur_event.txn.getTxnid(), EdgeType.TO);
 							// System.out.println(" TO: TXN[" + Long.toHexString(e.txn.getTxnid()) + "] ->
 							// [" + Long.toHexString(cur_event.txn.getTxnid()) + "]");
@@ -671,7 +654,7 @@ public abstract class AbstractVerifier {
 					Set<TxnBeginEndEvent> rm_events = new HashSet<TxnBeginEndEvent>();
 					for (TxnBeginEndEvent e : frontier) {
 						// remove from frontier when: commit.timestamp + drift < cur_event->txn.begin.timestamp
-						if (e.txn.getCommitTimestamp() + VeriConstants.TIME_DRIFT_THRESHOLD < cur_event.txn.getBeginTimestamp()) {
+						if (e.txn.commitTimestamp() + VeriConstants.TIME_DRIFT_THRESHOLD < cur_event.txn.begin_timestamp) {
 							rm_events.add(e);
 						}
 					}
@@ -722,58 +705,6 @@ public abstract class AbstractVerifier {
 			}
 		}
 	}
-
-
-	public static void CheckStaleReads(PrecedenceGraph m_g, Map<Long, Set<Long>> frontier,
-			Set<TxnNode> new_compl_nodes, int epoch_agree) {
-		for (TxnNode n : new_compl_nodes) {
-			for (OpNode op : n.getOps()) {
-				if (op.isRead) {
-					long prev_txid = op.read_from_txnid;
-					if (prev_txid == VeriConstants.INIT_TXN_ID) {continue;}
-					assert m_g.containTxnid(prev_txid);
-
-					int epoch = m_g.getNode(prev_txid).getVersion();
-					if (epoch == VeriConstants.TXN_NULL_VERSION ||
-							epoch > epoch_agree -2)
-					{
-						continue;
-					}
-
-					long key = op.key_hash;
-					long wid = op.wid;
-					if (key == wid || key == VeriConstants.VERSION_KEY_HASH) {continue;}
-
-					if (!frontier.containsKey(key)) {
-						System.out.println("key: [" + Long.toHexString(key));
-						System.out.println("txn: " + n.toString2());
-						System.out.println("frontier: size=" + frontier.size());
-						assert false;
-					}
-
-					if (!frontier.get(key).contains(prev_txid)) {
-						System.out.println("epoch_agree=" + epoch_agree);
-						System.out.println("key: [" + Long.toHexString(key));
-						System.out.println("txn: " + n.toString2());
-						System.out.println("read-from txn -----\n" + m_g.getNode(prev_txid).toString2());
-						System.out.println("frontier: size=" + frontier.size());
-						System.out.println("frontier-key: size=" + frontier.get(key).size());
-						for (long tid : frontier.get(key)) {
-							System.out.println("---frontier--: " + m_g.getNode(tid).toString2());
-						}
-						assert false;
-					}
-
-
-
-					assert frontier.containsKey(key);
-					assert frontier.get(key).contains(prev_txid);
-				}
-			}
-		}
-	}
-
-
 
 	// ===== helper functions ======
 

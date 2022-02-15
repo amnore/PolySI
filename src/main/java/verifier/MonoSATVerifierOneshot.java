@@ -19,38 +19,32 @@ import java.util.Set;
 import algo.DFSCycleDetection;
 import algo.TarjanStronglyConnectedComponents;
 
-import com.google.api.Endpoint;
 import com.google.common.graph.EndpointPair;
-import com.google.common.graph.GraphBuilder;
-import com.google.common.graph.Graphs;
-import com.google.common.graph.MutableGraph;
 
 import util.ChengLogger;
 import util.Pair;
 import util.Profiler;
 import util.VeriConstants;
 import util.VeriConstants.LoggerType;
-import monosat.*;
-import static monosat.Logic.*;
 
 public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 
 	public MonoSATVerifierOneshot(String logfd) {
 	  super(logfd);
   }
-	
-	
-	
-	
+
+
+
+
 	// ==============================
 	// ===== main logic =============
   // ==============================
-	
+
 	protected Set<Constraint> GenConstraints(PrecedenceGraph g) {
 		Map<Long, Set<List<TxnNode>>> chains = new HashMap<Long, Set<List<TxnNode>>>(); // key -> Set<List>
 		Map<Long,Long> wid2txnid = new HashMap<Long,Long>();
 		Map<Long,Long> wid2key = new HashMap<Long,Long>();
-		
+
 		// each key maps to set of chains; each chain is an ordered list
 		for (TxnNode tx : g.allNodes()) {
 			for (OpNode op : tx.getOps()) {
@@ -69,18 +63,18 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 				}
 			}
 		}
-		
+
 		// write combine
 		if (VeriConstants.WW_CONSTRAINTS) {
 		  CombineWrites(chains, g.getWWpairs(), wid2txnid, wid2key);
 		}
-		
+
 		// construct the constraints
 		Set<Constraint> cons = new HashSet<Constraint>();
 		for (Long key : chains.keySet()) {
 			// skip fence txs
 			if (key == VeriConstants.VERSION_KEY_HASH) {continue;}
-			
+
 			// take care of init tx, that chain happens before all the other chains
 			List<TxnNode> init_chain = null;
 			for (List<TxnNode> chain : chains.get(key)) {
@@ -95,7 +89,7 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 					}
 				}
 			}
-			
+
 			// create a constraint for each pair of chains
 			List<List<TxnNode>> chainset = new ArrayList<List<TxnNode>>(chains.get(key));
 			// tag whether a chain is frozen (frozen if all the txs are frozen)
@@ -109,7 +103,7 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 				}
 				chain_frozen.put(i, frozen);
 			}
-			
+
 			// generate constraints from a pair of chains
 			int len = chainset.size();
 			for (int i = 0; i < len; i++) {
@@ -137,27 +131,27 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 				}
 			}
 		}
-		
+
 		return cons;
 	}
-	
+
 	private boolean haveTimeOrder(List<TxnNode> chain_1, List<TxnNode> chain_2) {
 		assert VeriConstants.TIME_ORDER_ON;
-		
+
 		TxnNode head_1 = chain_1.get(0);
 		TxnNode head_2 = chain_2.get(0);
 		TxnNode tail_1 = chain_1.get(chain_1.size()-1);
 		TxnNode tail_2 = chain_2.get(chain_2.size()-1);
-		
+
 		// tail_1.commit + drift < head_2.begin => chain_1 < chain_2
-		if (tail_1.getCommitTimestamp() + VeriConstants.TIME_DRIFT_THRESHOLD < head_2.getBeginTimestamp() ||
-				tail_2.getCommitTimestamp() + VeriConstants.TIME_DRIFT_THRESHOLD < head_1.getBeginTimestamp())
+		if (tail_1.commitTimestamp() + VeriConstants.TIME_DRIFT_THRESHOLD < head_2.begin_timestamp ||
+				tail_2.commitTimestamp() + VeriConstants.TIME_DRIFT_THRESHOLD < head_1.begin_timestamp)
 		{
 			return true;
 		}
 		return false;
 	}
-	
+
 	private Constraint Coalesce(List<TxnNode> chain_1, List<TxnNode> chain_2, Long key,
 			Map<Long, Set<OpNode>> readfrom, Map<Long, Long> wid2txnid)
 	{
@@ -165,7 +159,7 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 		Set<Pair<Long, Long>> edge_set2 = GenChainToChainEdge(chain_2, chain_1, key, readfrom, wid2txnid);
 		return new Constraint(edge_set1, edge_set2, chain_1, chain_2);
 	}
-	
+
 	private List<Constraint> NoCoalesce(List<TxnNode> chain_1, List<TxnNode> chain_2, Long key,
 			Map<Long, Set<OpNode>> readfrom, Map<Long, Long> wid2txnid)
 	{
@@ -184,7 +178,7 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 			set2.add(sec_edge1);
 			ret.add(new Constraint(set1, set2, chain_1, chain_2));
 		}
-		
+
 	  // (2) construct constraints: <read_from_tail_2 -> head_1, tail_1 -> head_2>
 		Set<Pair<Long,Long>> edge_set2 = GenChainToChainEdge(chain_2, chain_1, key, readfrom, wid2txnid);
 		Pair<Long,Long> sec_edge2 = new Pair<Long,Long>(tail_1, head_2);
@@ -207,17 +201,17 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 			}
 		}
 		assert tail_1_wid != null;
-		
+
 		long tail_1 = chain_1.get(chain_1.size()-1).getTxnid();
 		long head_2 = chain_2.get(0).getTxnid();
-		
+
 		Set<Pair<Long,Long>> ret = new HashSet<Pair<Long,Long>>();
 		if (!readfrom.containsKey(tail_1_wid)) {
 			assert tail_1 != head_2;
 			ret.add(new Pair<Long,Long>(tail_1, head_2));
 			return ret;
 		}
-		
+
 		assert readfrom.get(tail_1_wid).size() > 0;
 		for (OpNode op : readfrom.get(tail_1_wid)) {
 			long rtx = op.txnid;
@@ -243,7 +237,7 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 				continue;
 			}
 			assert key.equals(wid2key.get(dst_wid));
-			
+
 			List<TxnNode> chain_1 = null, chain_2 = null;
 			Set<List<TxnNode>> key_chains = chains.get(key);
 			for (List<TxnNode> chain : key_chains) {
@@ -263,25 +257,25 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 			chain_1.addAll(chain_2);
 			key_chains.add(chain_1);
 		}
-		
+
 	}
-	
+
 	protected Map<Long,Set<Long>> Prune(PrecedenceGraph g, Set<Constraint> cons, ReachabilityMatrix rm) {
 		ChengLogger.println(" -- Before PRUNE #constraint[1] = " + cons.size());
 		Profiler prof = Profiler.getInstance();
 		Map<Long,Set<Long>> ret = new HashMap<Long,Set<Long>>();
-		
-		for (int i = 0; i < VeriConstants.MAX_INFER_ROUNDS; i++) {			
+
+		for (int i = 0; i < VeriConstants.MAX_INFER_ROUNDS; i++) {
 			// FIXME: can use multi-threading
 			List<Pair<Long,Long>> new_edges = PruneConstraintsInner(g, cons, rm);
 			if (new_edges.size() == 0) break;
-			
+
 			prof.startTick(VeriConstants.PROF_SOLVE_CONSTRAINTS3);
 			// update the graph
 			for (Pair<Long, Long> e : new_edges) {
 				g.addEdge(e.getFirst(), e.getSecond(), EdgeType.CONS_SOLV);
 			}
-			
+
 			// update matrix
 			int counter = 0;
 			Long[] src_list = new Long[new_edges.size()];
@@ -306,14 +300,14 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 			prof.endTick(VeriConstants.PROF_SOLVE_CONSTRAINTS3);
 		}
 		ChengLogger.println(" -- After PRUNE #constraint[2] = " + cons.size());
-		
+
 		return ret;
 	}
-	
+
 	private List<Pair<Long,Long>> PruneConstraintsInner(PrecedenceGraph g, Set<Constraint> cons, ReachabilityMatrix rm) {
 		Map<Long, Set<Long>> new_edges = new HashMap<Long,Set<Long>>();
 		Profiler prof = Profiler.getInstance();
-		
+
 		prof.startTick(VeriConstants.PROF_SOLVE_CONSTRAINTS1);
 		Set<Constraint> resolved_cons = new HashSet<Constraint>();
 		boolean found_conflict = false;
@@ -347,16 +341,16 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 					}
 				}
 			}
-			
+
 			for (Pair<Long,Long> e : con.edge_set2) {
 				if (found_conflict) {break;} // if there is already conflict, we skip this part
-				
+
 				int i2j = isItoJ(g.getNode(e.getFirst()), g.getNode(e.getSecond()), rm);
 				if (i2j == 1) { // edge in set 2 satisfies
 					//assert choose != 1;
 					if (choose == 1) {found_conflict = true; break;}
 					choose = 2;
-				} else if (i2j == 2) { // edge in set 2 conflicts		
+				} else if (i2j == 2) { // edge in set 2 conflicts
 					//assert choose != 2;
 					if (choose == 2) {found_conflict = true; break;}
 					choose = 1;
@@ -376,8 +370,8 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 					}
 				}
 			}
-			
-			// if we found violation; we report immediately.	
+
+			// if we found violation; we report immediately.
 			if (found_conflict) {
 				ChengLogger.println(LoggerType.ERROR, "=====Found conflict when pruning constraint====");
 				ChengLogger.println(LoggerType.ERROR, con.toString(g, true));
@@ -392,7 +386,7 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 				DFSCycleDetection.PrintOneCycle(g);
 				assert false;
 			}
-		
+
 			if (choose == 1) {
 				Add2NewEdges(con.edge_set1, new_edges);
 				resolved_cons.add(con);
@@ -404,9 +398,9 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 			}
 		}
 		prof.endTick(VeriConstants.PROF_SOLVE_CONSTRAINTS1);
-		
+
 		cons.removeAll(resolved_cons);
-		
+
 		List<Pair<Long,Long>> ret = new LinkedList<Pair<Long,Long>>();
 		for (Long src : new_edges.keySet()) {
 			for (Long dst : new_edges.get(src)) {
@@ -416,13 +410,13 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 				}
 			}
 		}
-		
+
 		//ChengLogger.println("   ----> Inner PRUNE #constraint = " + cons.size());
 		ChengLogger.println("   ----> Inner PRUNE #solved_cons = " + resolved_cons.size());
 		//ChengLogger.println("   ----> Inner PRUNE #new_edges = " + ret.size());
 		return ret;
 	}
-	
+
 	private void Add2NewEdges(Set<Pair<Long,Long>> edge_set, Map<Long, Set<Long>> new_edges) {
 		for (Pair<Long,Long> e : edge_set) {
 			Long src = e.getFirst();
@@ -433,7 +427,7 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 			new_edges.get(src).add(dst);
 		}
 	}
-	
+
 	// =============================
 	// ======= safe deletion =======
   // =============================
@@ -451,7 +445,7 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 		}
 		return spg;
 	}
-	
+
 	public boolean isFence(TxnNode t) {
 		if (t.getOps().size() > 0 &&
 				t.getOps().get(0).isRead &&
@@ -461,7 +455,7 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 		}
 		return false;
 	}
-	
+
 	protected boolean isWriteFence(TxnNode t) {
 		if (t.getOps().size() == 2 &&
 				t.getOps().get(0).isRead &&
@@ -474,7 +468,7 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 		return false;
 	}
 
-	
+
 	protected Set<Long> writeKeys(TxnNode txn) {
 		Set<Long> keys = new HashSet<Long>();
 		for (OpNode op : txn.getOps()) {
@@ -484,7 +478,7 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 		}
 		return keys;
 	}
-	
+
 	private long getWid(TxnNode txn, long key) {
 		for (OpNode op : txn.getOps()) {
 			if (!op.isRead && op.key_hash == key) {
@@ -494,7 +488,7 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 		assert false;
 		return -1L;
 	}
-	
+
   // 0: concurrent
 	// 1: i ~-> j
 	// 2: j ~-> i
@@ -507,12 +501,12 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 		}
 		return 0;
 	}
-	
-	
+
+
 	public boolean CheckIncomplete(PrecedenceGraph g) {
 		boolean complete = true;
 		for (TxnNode txn : g.allNodes()) {
-			if (txn.getStatus() != TxnType.COMMIT && txn.getTxnid() != VeriConstants.INIT_TXN_ID) {
+            if (txn.type() != TxnType.COMMIT && txn.getTxnid() != VeriConstants.INIT_TXN_ID) {
 				System.out.println(txn.toString2());
 				complete = false;
 			}
@@ -523,15 +517,15 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 	// =========================
 	// ===== parallel audit ====
 	// =========================
-	
+
 	private void CheckIndependentCluster(Set<Constraint> cons, ArrayList<Set<TxnNode>> sccs) {
 		Map<Long, Integer> tid2sccid = new HashMap<Long,Integer>();
-		
+
 		for (int i=0; i<sccs.size(); i++) {
 			Set<TxnNode> scc = sccs.get(i);
 			// (1) no mix of frozen/non-frozen txns
 			boolean frozen = scc.iterator().next().frozen;
-			for (TxnNode txn : scc) {	
+			for (TxnNode txn : scc) {
 				assert frozen == txn.frozen;
 				tid2sccid.put(txn.getTxnid(), i);
 			}
@@ -557,15 +551,15 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 			}
 		}
 	}
-	
-	
+
+
 	protected void CheckConstraints(PrecedenceGraph m_g, Set<Constraint> cons) {
 		// check if all the elements in one constraints are either (1) all frozen
 		// or (2) all non-frozen
 		for (Constraint con : cons) {
 			boolean frozen = con.chain_1.get(0).frozen;
 			boolean good = true;
-			
+
 			for (TxnNode tx : con.chain_1) {
 				good = good && (frozen == tx.frozen);
 			}
@@ -580,14 +574,14 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 				good = good &&  (frozen == m_g.getNode(e.getFirst()).frozen);
 				good = good &&  (frozen == m_g.getNode(e.getSecond()).frozen);
 			}
-			
+
 			if (!good) {
 				ChengLogger.println(LoggerType.ERROR, con.toString(m_g));
 				assert false;
 			}
 		}
 	}
-	
+
 	protected Set<SCCNode> GetIndependentClusters(PrecedenceGraph g_rel, Set<Constraint> cons) {
 		PrecedenceGraph spg = GetSuperpositionGraph(g_rel, cons);
 		TarjanStronglyConnectedComponents tarjan = new TarjanStronglyConnectedComponents();
@@ -596,13 +590,13 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 		if (VeriConstants.HEAVY_VALIDATION_CODE_ON) {
 			CheckIndependentCluster(cons, sccs);
 		}
-		
+
 		Set<SCCNode> scc_list = new HashSet<SCCNode>();
 		for (Set<TxnNode> scc : sccs) {
 			SCCNode scc_node = new SCCNode(scc);
 			scc_list.add(scc_node);
 		}
-		
+
 		return scc_list;
 	}
 
@@ -611,12 +605,12 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 		Set<Pair<PrecedenceGraph, Set<Constraint>>> ret = new HashSet<Pair<PrecedenceGraph, Set<Constraint>>>();
 		for (SCCNode scc : sccs) {
 			if (scc.size() == 1) { continue; } // skip single element scc
-			
+
 			Set<Long> scc_ids = new HashSet<Long>();
 			for (TxnNode tx : scc.txns) {
 				scc_ids.add(tx.getTxnid());
 			}
-			
+
 			Set<Constraint> sub_cons = new HashSet<Constraint>();
 			for (Constraint con : cons) { // FIXME: performance; can be much faster
 				long head_1 = con.chain_1.get(0).getTxnid();
@@ -629,11 +623,11 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 			}
 			// NOTE: if there is no constraint, there should be no cycle!
 			assert sub_cons.size() > 0;
-			
+
 			PrecedenceGraph sub_g = g.subgraph(scc_ids);
 			ret.add(new Pair<PrecedenceGraph, Set<Constraint>>(sub_g, sub_cons));
 		}
-		
+
 		// check invariant: constraints in all sugraphs == all constraints
 		int num_cons = 0;
 		Set<Constraint> all_subgraph_constraints = new HashSet<Constraint>();
@@ -644,10 +638,10 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 		assert num_cons == cons.size();
 		all_subgraph_constraints.removeAll(cons);
 		assert all_subgraph_constraints.size() == 0;
-		
+
 		return ret;
 	}
-	
+
 	// =========================
 	// ===== SMT Solver =========
 	// =========================
@@ -661,7 +655,7 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 			ArrayList<EndpointPair<TxnNode>> out_edges = new ArrayList<EndpointPair<TxnNode>>();
 			ArrayList<Constraint> out_cons = new ArrayList<Constraint>();
 			encoder.GetMinUnsatCore(out_edges, out_cons);
-			
+
 			// print out
 			ChengLogger.println(LoggerType.ERROR, "========= MiniUnsatCore ============");
 			ChengLogger.println(LoggerType.ERROR, "  === 1. edges ===");
@@ -682,44 +676,44 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 				ChengLogger.println(LoggerType.ERROR, "  " + t.toString2());
 			}
 		}
-		
+
 		if (ret && solution != null) { // if we have a solution
 			solution.addAll(encoder.GetSolutionEdges());
 		}
-		
-		
+
+
 		return ret;
 	}
-	
+
 	// =========================
 	// ===== main APIs =========
 	// =========================
-	
+
 	protected PrecedenceGraph CreateKnownGraph() {
 		ArrayList<File> opfiles = findOpLogInDir(log_dir);
 		boolean ret = loadLogs(opfiles, m_g);
 		CheckValues(m_g); // check whether all the read/write values match
 		if (!ret) assert false; // Reject
-		
+
 		// check incomplete
 		boolean pass = CheckIncomplete(m_g);
 		if (!pass) {
 			ChengLogger.println(LoggerType.ERROR, "REJECT: The history is incomplete!");
 			assert false;
 		}
-		
+
 		ChengLogger.println("[1] #Clients=" + this.client_list.size());
 		ChengLogger.println("[1] global graph: #n=" + m_g.allNodes().size());
 		return m_g;
 	}
-	
+
 	private boolean EncodeAndSolve() {
 		Profiler prof = Profiler.getInstance();
 
 		prof.startTick("ONESHOT_GEN_CONS");
 		Set<Constraint> cons = GenConstraints(m_g);
 		prof.endTick("ONESHOT_GEN_CONS");
-		
+
 		prof.startTick("ONESHOT_PRUNE");
 		// NOTE: for TPCC, cons.size()==0, we skip this
 		if (VeriConstants.INFER_RELATION_ON) {
@@ -745,7 +739,7 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 				}
 			}
 		}
-		prof.endTick("ONESHOT_PRUNE");	
+		prof.endTick("ONESHOT_PRUNE");
 
 		// TODO: put into HEAVY_CHECK
 		if (VeriConstants.HEAVY_VALIDATION_CODE_ON) {
@@ -783,14 +777,14 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 		prof.startTick("ONESHOT_CONS");
 		CreateKnownGraph();
 		prof.endTick("ONESHOT_CONS");
-		
+
 		// (2)
 		boolean pass = EncodeAndSolve();
-		
+
 		long cons = prof.getTime("ONESHOT_CONS") + prof.getTime("ONESHOT_GEN_CONS");
 		long prune = prof.getTime("ONESHOT_PRUNE");
 		long solve = prof.getTime("ONESHOT_SOLVE");
-		
+
 		ChengLogger.println("  construct: " + cons + "ms");
 		ChengLogger.println("  prune: " + prune + "ms");
 		ChengLogger.println("  solve: " + solve + "ms");

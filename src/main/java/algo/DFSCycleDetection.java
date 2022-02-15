@@ -15,19 +15,20 @@ import com.google.common.graph.MutableGraph;
 import graph.PrecedenceGraph;
 import graph.TxnNode;
 import util.ChengLogger;
+import util.VeriConstants;
 import util.VeriConstants.LoggerType;
 import verifier.Constraint;
 import verifier.PolyGraphDumper;
 
 public class DFSCycleDetection {
-	
+
 	// a cycle this detector last found
 	private static ArrayList<Long> last_cycle = null;
-	
+
 	public static ArrayList<Long> getLastCycle() {
 		return last_cycle;
 	}
-	
+
 	//============Ungly impl==================
 	public static class Symbol extends TxnNode {
 		public long monkId;
@@ -43,7 +44,7 @@ public class DFSCycleDetection {
 		}
 	};
 	// ==============================
-	
+
 	private static ArrayList<Symbol> getCycle(Stack<TxnNode> stack, HashMap<Long, Boolean> on_path, TxnNode next_node) {
 		ArrayList<Symbol> cycle = new ArrayList<Symbol>();
 		while(true) {
@@ -71,7 +72,7 @@ public class DFSCycleDetection {
 		assert ret.get(0).monkId == next_node.id();
 		return ret;
 	}
-	
+
 	/*
 	  1  procedure DFS-iterative(G,v):
 		2      let S be a stack
@@ -80,7 +81,7 @@ public class DFSCycleDetection {
 		5          v = S.pop()
 		6          if v is not labeled as discovered:
 		7              label v as discovered
-		8              for all edges from v to w in G.adjacentEdges(v) do 
+		8              for all edges from v to w in G.adjacentEdges(v) do
 		9                  S.push(w)
 		*/
 	public static boolean DFS(Graph<TxnNode> g, TxnNode node, HashMap<Long, Boolean> visited)	{
@@ -92,7 +93,7 @@ public class DFSCycleDetection {
 		stack.push(new Symbol(node.id()));
 		stack.push(node);
 		assert(visited.get(node.id()) == false);
-		
+
 		while (!stack.isEmpty()) {
 			TxnNode v = stack.pop();
 			// if symbolic, update the path information
@@ -103,15 +104,15 @@ public class DFSCycleDetection {
 				onPath.put(sym_id, false);
 				continue;
 			}
-			
+
 			// record this node on the path
 			onPath.put(v.id(), true);
-			
+
 			if (!visited.get(v.id())) {
 				visited.put(v.id(), true);
 				Set<TxnNode> successors = g.successors(v);
 				for (TxnNode w : successors) {
-					
+
 					if (onPath.containsKey(w.id()) && onPath.get(w.id())==true) {
 						// get the cycle
 						ArrayList<Symbol> cycle = getCycle(stack, onPath, w);
@@ -124,18 +125,18 @@ public class DFSCycleDetection {
 						// we found a cycle
 						return true;
 					}
-					
+
 					if (!visited.get(w.id())) {
 						stack.push(new Symbol(w.id()));
 						stack.push(w);
 					}
 				}
 			}
-	
+
 		}
 		return false;
 	}
-	
+
 	public static boolean hasCycleHybrid(Graph<TxnNode> g) {
 		try {
 			boolean hasCycle = Graphs.hasCycle(g);
@@ -144,17 +145,17 @@ public class DFSCycleDetection {
 			return DFSCycleDetection.CycleDetection(g);
 		}
 	}
-	
+
 	public static boolean CycleDetection(Graph<TxnNode> g) {
-		
+
 		HashMap<Long, Boolean> visited = new HashMap<Long, Boolean>();
-		
+
 		// O(n) to init visited and find the source
 		for (TxnNode n : g.nodes()) {
 			// update the visit status to false
 			visited.put(n.id(), false);
 		}
-		
+
 		// do DFS on each of 0-in-gress node
 		for (TxnNode node : g.nodes())  {
 			boolean hasCycle = DFS(g, node, visited);
@@ -162,17 +163,17 @@ public class DFSCycleDetection {
 		}
 		return false;
 	}
-	
+
 	public static void PrintOneCycle(PrecedenceGraph g) {
 		last_cycle = null;
 		boolean hascycle = CycleDetection(g.getGraph());
 		if (hascycle != Graphs.hasCycle(g.getGraph())) {
-			System.out.println("GOOGLE disagree: " + Graphs.hasCycle(g.getGraph()));		
+			System.out.println("GOOGLE disagree: " + Graphs.hasCycle(g.getGraph()));
 			assert false;
 		}
 		assert hascycle;
 		assert last_cycle != null;
-		
+
 		ChengLogger.println(LoggerType.ERROR, "========= Cycle in the known graph ============");
 		ChengLogger.println(LoggerType.ERROR, "  === 1. cycle ==");
 		ArrayList<TxnNode> txns = new ArrayList<TxnNode>();
@@ -188,71 +189,71 @@ public class DFSCycleDetection {
 			ChengLogger.println(LoggerType.ERROR, "  " + t.toString2());
 		}
 	}
-	
-	
+
+
 	/*
 	ArrayList<TxnNode> list;
 	HashMap<TxnNode, Integer> t2id;
-	
-  // This function is a variation of DFSUytil() in  
-  // https://www.geeksforgeeks.org/archives/18212 
-  private boolean isCyclicUtil(int i, boolean[] visited, 
-                                    boolean[] recStack, Graph<TxnNode> g)  
-  { 
-        
-      // Mark the current node as visited and 
-      // part of recursion stack 
-      if (recStack[i]) 
-          return true; 
 
-      if (visited[i]) 
-          return false; 
-            
-      visited[i] = true; 
+  // This function is a variation of DFSUytil() in
+  // https://www.geeksforgeeks.org/archives/18212
+  private boolean isCyclicUtil(int i, boolean[] visited,
+                                    boolean[] recStack, Graph<TxnNode> g)
+  {
 
-      recStack[i] = true; 
+      // Mark the current node as visited and
+      // part of recursion stack
+      if (recStack[i])
+          return true;
+
+      if (visited[i])
+          return false;
+
+      visited[i] = true;
+
+      recStack[i] = true;
       TxnNode cur = list.get(i);
-      
-      
+
+
       List<Integer> children = new ArrayList<Integer>();
       for (TxnNode succ : g.successors(cur)) {
       		children.add(t2id.get(succ));
       }
-        
-      for (Integer c: children) 
-          if (isCyclicUtil(c, visited, recStack, g)) 
-              return true; 
-                
-      recStack[i] = false; 
 
-      return false; 
-  } 
+      for (Integer c: children)
+          if (isCyclicUtil(c, visited, recStack, g))
+              return true;
 
-  // Returns true if the graph contains a  
-  // cycle, else false. 
-  // This function is a variation of DFS() in  
-  // https://www.geeksforgeeks.org/archives/18212 
-  private boolean isCyclic(Graph<TxnNode> g)  
-  { 
+      recStack[i] = false;
+
+      return false;
+  }
+
+  // Returns true if the graph contains a
+  // cycle, else false.
+  // This function is a variation of DFS() in
+  // https://www.geeksforgeeks.org/archives/18212
+  private boolean isCyclic(Graph<TxnNode> g)
+  {
         int n = g.nodes().size();
        list = new ArrayList<TxnNode>(g.nodes());
        t2id = new HashMap<TxnNode,Integer>();
        for (int i=0; i<list.size(); i++) {
       	 	t2id.put(list.get(i), i);
        }
-      // Mark all the vertices as not visited and 
-      // not part of recursion stack 
-      boolean[] visited = new boolean[n]; 
-      boolean[] recStack = new boolean[n]; 
-        
-        
-      // Call the recursive helper function to 
-      // detect cycle in different DFS trees 
-      for (int i = 0; i < n; i++) 
-          if (isCyclicUtil(i, visited, recStack, g)) 
-              return true; 
+      // Mark all the vertices as not visited and
+      // not part of recursion stack
+      boolean[] visited = new boolean[n];
+      boolean[] recStack = new boolean[n];
 
-      return false; 
+
+      // Call the recursive helper function to
+      // detect cycle in different DFS trees
+      for (int i = 0; i < n; i++)
+          if (isCyclicUtil(i, visited, recStack, g))
+              return true;
+
+      return false;
   }
   */
 }
