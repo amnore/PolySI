@@ -1,5 +1,6 @@
 package verifier;
 
+import java.util.HashSet;
 import java.util.Set;
 
 import graph.PrecedenceGraph;
@@ -17,6 +18,7 @@ public class SIVerifier extends AbstractLogVerifier {
 
 	@Override
 	public boolean audit() {
+		var constraints = generateConstraints(graph);
 		throw new UnimplementedError();
 	}
 
@@ -63,8 +65,27 @@ public class SIVerifier extends AbstractLogVerifier {
 	 * @param graph the graph to use
 	 *
 	 * @return the set of constraints generated
+	 *
+	 * For each triple of transactions A, B, C
+	 * such that B reads A and C writes the key B read,
+	 * generate polygraph for the following two conditions:
+	 *
+	 * 1. C precedes A, then C ->(ww) A ->(wr) B
+	 * 2. A precedes C, then A ->(wr) B ->(rw) C, A ->(ww) C
+	 *
+	 * Note that it is possible for C to precede B in SI.
 	 */
 	private static Set<Constraint> generateConstraints(PrecedenceGraph graph) {
+		for (var a: graph.allNodes()) {
+			for (var writeOp: a.getOps()) {
+				if (writeOp.isRead) {
+					continue;
+				}
+
+				// TODO construct constraints
+			}
+		}
+
 		throw new UnimplementedError();
 	}
 }
