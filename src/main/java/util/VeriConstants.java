@@ -5,51 +5,51 @@ import verifier.AbstractVerifier;
 
 public class VeriConstants {
 	public static boolean HEAVY_VALIDATION_CODE_ON = true;
-	
+
 	public static String CONFIG_FILE_NAME = "cobra.conf";
 
 	// algorithm features
-	public static boolean WW_CONSTRAINTS = true; // use ww instead of rw constraints i.e., Write combine
-	public static boolean BUNDLE_CONSTRAINTS = true; // bundle constraints i.e., Coalescing
-	public static boolean INFER_RELATION_ON = true; // solve constraints i.e., Pruning
+	public static boolean WW_CONSTRAINTS = false; // use ww instead of rw constraints i.e., Write combine
+	public static boolean BUNDLE_CONSTRAINTS = false; // bundle constraints i.e., Coalescing
+	public static boolean INFER_RELATION_ON = false; // solve constraints i.e., Pruning
 	public static boolean MERGE_CONSTRAINT_ON = false; // merge constraints
-	public static boolean WRITE_SPACE_ON = true; // correlated constraints
-	public static boolean PCSG_ON = true;    // PCG
+	public static boolean WRITE_SPACE_ON = false; // correlated constraints
+	public static boolean PCSG_ON = false;    // PCG
 	//
-	public final static boolean RMW_EXTRACTION = true;
+	public final static boolean RMW_EXTRACTION = false;
 	//
-	public static boolean FROZEN_ZONE_DETECTION = true;
+	public static boolean FROZEN_ZONE_DETECTION = false;
 	// optimization
-	public static boolean GPU_MATRIX = true;
+	public static boolean GPU_MATRIX = false;
 	public static boolean MULTI_THREADING_OPT = true;
 	public final static boolean CACHE_SEARCHING_RESULTS = true;
 	public static boolean REACHABILITY_QUICK_START = true;
-	
+
 	// Strict serializability
 	public static boolean TIME_ORDER_ON = false;
 	public static int TIME_DRIFT_THRESHOLD = 100; //ms
-	
+
 	// continues verifier
 	public final static int VERI_BATCH_SIZE = 3000;
-	
+
 	//public final static long INIT_TXN_ID = 0;
-	
+
 	// This is the number of rounds for the anti-ww inference
 	public static int MAX_INFER_ROUNDS = 10;
 	public final static int RMATRIX_CONNECT_BATCH = 100;
 	public final static int MAX_MATRIX_WIDTH = 20000;
-	
+
 	// some cap
 	public final static int COUNT_MAX_TRIALS = 131072; // =2^17
 	public final static int SEARCH_TIMEOUT = 60; //sec
-	
+
 	// This is for experiment only: keep how much proportion of ww-dependencies.
 	public final static boolean EXP_DROP_WW = false;
 	public static int EXP_KEEP_WW_RATE = 100 /*0*/;
-	
+
 	public final static String CLOUD_LOG_KIND = "cheng_log";
 	public final static String TS_UPDATE_TAG = "updated_timestamp";
-	
+
 	// profiler
 	public final static String PROF_OFFLINE_LOG_LOADING_TIME = "prof_off_log_loading";
 	public static final String PROF_FILE_LOADING = "prof_file_loading";
@@ -76,8 +76,8 @@ public class VeriConstants {
 	public final static String PROF_MONOSAT_1 = "prof_monosat_1";
 	public final static String PROF_MONOSAT_2 = "prof_monosat_2";
 	public static final String PROF_TRANSITIVE_REDUCTION = "prof_transitive_reduction";
-	
-	
+
+
 	// synced with the cloud-lib
 	// Delete operation (for read operations)
 	public static long DELETE_WRITE_ID = 0xabcdefabL;
@@ -92,43 +92,43 @@ public class VeriConstants {
 	// Only used in WW tracking, when we do blind write.
 	public static long MISSING_WRITE_ID = 0xadeafbeeL;
 	public static long MISSING_TXN_ID = 0xadeafbeeL;
-	
+
 	// Temp key for operations appear in WW-log, but not in client-log
 	public static final long MISSING_KEY_HASH = 0xdeaddeadL;
 
 	// for log hash
 	public static final String CLOG_BEGIN_HASH = "0";
 	public static final String WWLOG_BEGIN_HASH = "1";
-	
+
 	// fetching frequency
 	public static final long SLEEP_TIME_PER_ROUND = 1000; // in ms
 	public static final int QUERY_LAY_BACK_TIME = 1;   // in sec
-	
+
 	// log related
 	public final static String LOG_FD = "/tmp/cobra/";
 	public static String LOG_FD_LOG = "/tmp/cobra/log/";
 	public final static String LOG_PATH = "/tmp/cobra/benchmark.log";
 	public final static boolean APPEND_OTHERWISE_RECREATE = false;
-	
+
 	// cheng logger
 	public enum LoggerType {ERROR, WARNING, INFO, DEBUG, TRACE};
 	public static LoggerType LOGGER_LEVEL = LoggerType.INFO;
 	public static boolean LOGGER_ON_SCREEN = true;
 	public static String LOGGER_PATH = LOG_FD_LOG + "logger.log";
-	
+
 	// trace truncation
 	public static String EPOCH_KEY = "FZVERSION";
 	public static long VERSION_KEY_HASH = AbstractVerifier.hashKey(EPOCH_KEY);
 	public static int FZ_INIT_VERSION = 1;
-	
+
 	// TxnNode null
 	public static final long TXN_NULL_TS = -1;
 	public static final int TXN_NULL_CLIENT_ID = -1;
 	public static final int TXN_NULL_VERSION = -1;
-	
+
 	// random seed
 	public final static long SEED = 19930610;
-	
+
 	// online verifier
 	public static final int BUFFER_SIZE_M = 5;
 	public static final int PIPE_SAFE_M = 1;
@@ -143,21 +143,21 @@ public class VeriConstants {
 	public static String DB_HOST= "ye-cheng.duckdns.org";
 	public static String PG_USERNAME="cobra";
 	public static String PG_PASSWORD="Cobra<318";
-	
+
 	public static String DB_URL() {
 		return "jdbc:postgresql://" + DB_HOST + ":5432/testdb";
 	}
-	
+
 	// Z3
 	public static boolean DUMP_POLYG = false;
-	
+
 	// multi-threading
 	public static final int THREAD_POOL_SIZE = 24;
-	
+
 	// workers
 	public static boolean PARSING_SIG_ON = false;
 	public static boolean PARSING_HASH_ON = true;
-	
+
 	// workload related
 	public enum BenchType {
 		CHENG, TPCC, YCSB, RUBIS, TWITTER,
@@ -165,13 +165,13 @@ public class VeriConstants {
 	public static int BENCH_TYPE = 1;
 	public static final int NUM_CLIENT_MACHINES = 2;
 	public static int TOTAL_CLIENTS = 24;
-	
+
 	// socket
 	public static boolean REMOTE_LOG = false; // will automatically be set by cmd args
 	public static int VERIFIER_PORT = 10086;
 	public static int MAX_BYTES_IN_TXN = 1000; // stop reading from socket if less bytes available in stream
 	public static int MIN_PROCESSING_NEW_TXN = 5000; // continue reading if we haven't reading these many txns
-	
+
 	// garbage collection (GC)
 	public static String GC_KEY = "COBRA_GC_KEY";
 	public static int GC_CLIENT_ID = 0xabcdef;

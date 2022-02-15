@@ -134,16 +134,6 @@ public abstract class AbstractVerifier {
 		return VeriConstants.TXN_NULL_CLIENT_ID;
 	}
 
-	// =======Log Parsing===========
-
-	public static long bytes2long(byte[] src, int len) {
-		long value = 0;
-		for (int i = 0; i < len; i++) {
-		   value = (value << 8) + (src[i] & 0xff);
-		}
-		return value;
-	}
-
 	public long ExtractClientLogFromStream(DataInputStream in, PrecedenceGraph g, String client_name) throws IOException {
 		int cid = getClientId(client_name);
 		// if we first see this client
@@ -217,7 +207,7 @@ public abstract class AbstractVerifier {
 					assert cur_txn.type() == TxnType.ONGOING;
 					assert cur_txn.getOps().size() == 0;
 				} else {  // case 2
-					var beginTs = VeriConstants.TIME_ORDER_ON ? in.readLong() : Math.abs(txnid << 3);
+					var beginTs = Math.abs(txnid << 3);
 					cur_txn = new TxnNode(txnid, beginTs, client_id);
 					g.addTxnNode(cur_txn);
 				}
@@ -229,12 +219,7 @@ public abstract class AbstractVerifier {
 				assert cur_txn != null;
 				txnid = in.readLong();
 				assert txnid == cur_txn.getTxnid();
-				if (VeriConstants.TIME_ORDER_ON) {
-					long ts = in.readLong();
-					cur_txn.commit(ts, prev_txn);
-				} else {
-					cur_txn.commit(txn_counter++, prev_txn);
-				}
+				cur_txn.commit(txn_counter++, prev_txn);
 				// FIXME: which is better? (1) add edges from init to all txns; or (2) add edges
 				// to only those without predecessor
 				g.addEdge(g.getNode(VeriConstants.INIT_TXN_ID), cur_txn, EdgeType.INIT);
@@ -242,10 +227,6 @@ public abstract class AbstractVerifier {
 				if (prev_txn != null) {
 					g.addEdge(prev_txn, cur_txn, EdgeType.CO);
 					this.num_co++;
-				}
-				// extract read-modify-write
-				if (VeriConstants.RMW_EXTRACTION) {
-					AddRMWEdge(g, cur_txn, this);
 				}
 				// this is a new txn the parser sees
 				new_txns_this_turn.add(cur_txn);
@@ -321,28 +302,6 @@ public abstract class AbstractVerifier {
 		assert cur_txn == null; // assert this is then end of one txn or there is no txn at all
 		// if we didn't find any transaction, just return what we got
 		return (prev_txn == null) ? recent_txnid : prev_txn.getTxnid();
-	}
-
-	// if there is read-modify-write in this txn, we add inferred WW-order to g
-	public static void AddRMWEdge(PrecedenceGraph g, TxnNode cur_txn, AbstractVerifier veri) {
-		Map<Long, OpNode> key2read = new HashMap<Long, OpNode>();
-		// read
-		for (OpNode op : cur_txn.getOps()) {
-			if (op.isRead) {
-				key2read.put(op.key_hash, op);
-			}
-		}
-		// write
-		for (OpNode op : cur_txn.getOps()) {
-			if (!op.isRead && key2read.containsKey(op.key_hash)) {
-				long prev_wid = key2read.get(op.key_hash).wid;
-				// add WW order to precedence graph
-				g.addWW(prev_wid, op.wid, op.key_hash);
-				if (veri != null) {
-					veri.num_rmw_ww++;
-				}
-			}
-		}
 	}
 
 	private void addWriteIfNotExist(PrecedenceGraph g, long key_hash, long val_hash) {
@@ -428,248 +387,6 @@ public abstract class AbstractVerifier {
 		}
 	}
 
-	public static void AddRWEdges(PrecedenceGraph g, Set<TxnNode> new_txns_this_turn, Map<Long, Long> wid2txnid, AbstractVerifier veri) {
-		// to add RW edges:
-		// (1) loop all new reads and check if it can generate a RW edge
-		// (2) loop all new writes and see if it is belongs to ww
-		// NOTE: there are duplication between (1) and (2); but considering that a read might happen in a previous turn, they are necessary
-		Map<Long, Long> wwpairs = g.getWWpairs();
-		Map<Long, Long> rev_wwpairs = g.getRevWWparis();
-		for (TxnNode txn : new_txns_this_turn) {
-			for (OpNode op : txn.getOps()) {
-				if (op.isRead) { // (1)
-					// [w1 --> op] && [w1 --> w2] => [op --> w2]
-					long w1 = op.wid;
-					if (wwpairs.containsKey(w1)) { // w1-->w2
-						long w2 = wwpairs.get(w1);
-						// USTBABUG: w1's txn might not be seen by the verifier, hence wid2txnid may not have it
-						// however, it's okay, given both the w2's and rop's txns are visible in this round.
-						if (wid2txnid.containsKey(w1)) {
-							assert op.txnid != wid2txnid.get(w1); // cannot read from itself
-						}
-						if (op.txnid != wid2txnid.get(w2)) {  // if rop is in the same txn as w2
-							g.addEdge(txn.getTxnid(), wid2txnid.get(w2), EdgeType.RW); // op --> w2
-							if (veri != null) {
-								veri.num_rw++;
-							}
-						}
-					}
-				} else { // (2)
-					if (wwpairs.containsKey(op.wid)) {
-						long w1 = op.wid;
-						long w2 = wwpairs.get(w1);
-						assert wid2txnid.containsKey(w1);
-						AddRWEdgesInner(g, wid2txnid, w1, w2);
-					}
-					if (rev_wwpairs.containsKey(op.wid)) {
-						long w1 = rev_wwpairs.get(op.wid);
-						long w2 = op.wid;
-						AddRWEdgesInner(g, wid2txnid, w1, w2);
-					}
-				}
-			}
-		}
-	}
-
-	private static void AddRWEdgesInner(PrecedenceGraph g, Map<Long, Long> wid2txnid, long w1, long w2) {
-		if (g.m_readFromMapping.containsKey(w1)) { // w1-->rop
-			for (OpNode rop : g.m_readFromMapping.get(w1)) {
-				if (wid2txnid.containsKey(w1)) {  // w1 might not be seen by the verifier
-					assert rop.txnid != wid2txnid.get(w1); // cannot read from itself
-				}
-				if (rop.txnid != wid2txnid.get(w2)) {  // if rop is in the same txn as w2
-					g.addEdge(rop.txnid, wid2txnid.get(w2), EdgeType.RW); // rop --> w2
-				}
-			}
-		}
-	}
-
-
-	private void addRWedge(TxnBeginEndEvent cur_event, TxnBeginEndEvent e, long key, PrecedenceGraph g) {
-		boolean found_write = false;
-		Map<Long,Set<OpNode>> readFromMapping = g.m_readFromMapping;
-		// there is a WW-happen-before of [e.txn --WW--> cur_event.txn]: should add some anti-dependencies
-		for (OpNode op : e.txn.getOps()) {
-			if (key == op.key_hash) {
-				// There might be both Write and Read to the same key
-				if (op.isRead) continue;
-				found_write = true;
-
-				// current wid
-				long cur_wid = op.wid;
-				if (readFromMapping.containsKey(cur_wid)) {
-					for (OpNode rop : readFromMapping.get(cur_wid)) {
-						if (rop.txnid != cur_event.txn.getTxnid()) {
-							// this is anti-edge, from read-txn to the next-write-txn
-							g.addEdge(rop.txnid, cur_event.txn.getTxnid(), EdgeType.RW);
-							this.num_rw++;
-						}
-					}
-				}
-			}
-		}
-		assert found_write; // assert there is one write op to this key
-	}
-
-	private void OrochiCore(TxnBeginEndEvent event, Set<TxnBeginEndEvent> frontier, long key, PrecedenceGraph g) {
-		if (event.begin) {
-			// there should be a TO order for ww
-			for (TxnBeginEndEvent e : frontier) {
-				assert e.txn.commitTimestamp() < event.timestamp; // because the events are sorted
-				g.addEdge(e.txn.getTxnid(), event.txn.getTxnid(), EdgeType.TO);
-				// System.out.println(" TO: TXN[" + Long.toHexString(e.txn.getTxnid()) + "] ->
-				// [" + Long.toHexString(cur_event.txn.getTxnid()) + "]");
-				this.num_to++;
-				// add anti-dependencies
-				addRWedge(event, e, key, g);
-			}
-		} else { // this is end event
-			Set<TxnBeginEndEvent> rm_events = new HashSet<TxnBeginEndEvent>();
-			for (TxnBeginEndEvent e : frontier) {
-				if (e.txn.commitTimestamp() < event.txn.begin_timestamp) {
-					rm_events.add(e);
-				}
-			}
-			// remove the ones which can be represented from frontier
-			frontier.removeAll(rm_events);
-			// add current event to frontier
-			frontier.add(event);
-		}
-	}
-
-	// add the time order edges for conflict serializability between conflict txns
-	// (1) create two event for one txn, the start and end event
-	// (2) sort the events by time
-	// (3) use orochi's algorithm to add time order edges
-	//      *on each key*
-	public void AddConflictSEREdges(PrecedenceGraph g) {
-		int alive_txns = 0;
-		// (1)
-		// UTBABUG: timestamps are not unique
-		Map<Long, List<TxnBeginEndEvent>> all_events = new HashMap<Long,List<TxnBeginEndEvent>>();
-		for (TxnNode txn : g.allNodes()) {
-			long begin_ts = txn.begin_timestamp;
-			long commit_ts = txn.commitTimestamp();
-			if (!all_events.containsKey(begin_ts)) {
-				all_events.put(begin_ts, new LinkedList<TxnBeginEndEvent>());
-			}
-			if (!all_events.containsKey(commit_ts)) {
-				all_events.put(commit_ts, new LinkedList<TxnBeginEndEvent>());
-			}
-			// NOTE: if two txns have the same timestamp, we treat them as concurrent which is pessimistic for Cobra.
-			// i.e., put begin ahead of commit for the same timestamp
-			all_events.get(begin_ts).add(0, new TxnBeginEndEvent(true, begin_ts, txn)); // add begin at the head
-			all_events.get(commit_ts).add(new TxnBeginEndEvent(false, commit_ts, txn)); // add commit at the end
-		}
-
-		// (2)
-		SortedMap<Long,List<TxnBeginEndEvent>> sorted_events = new TreeMap<Long, List<TxnBeginEndEvent>>(all_events);
-		// (3)
-		Map<Long, Set<TxnBeginEndEvent>> perkey_frontier = new HashMap<Long, Set<TxnBeginEndEvent>>();
-		// re-usable variables
-		List<Long> txn_wkeys = new ArrayList<Long>();
-
-		for (List<TxnBeginEndEvent> cur_events : sorted_events.values()) {
-			for (TxnBeginEndEvent cur_event : cur_events) {
-				// update concurrency counter
-				if (cur_event.begin) {
-					alive_txns++;
-					this.max_concurrent_txns = Math.max(this.max_concurrent_txns, alive_txns);
-				} else {
-					alive_txns--;
-				}
-
-				// (3.1) fetch related write keys. FIXME: may miss R(a) -> W(a) TO edges.
-				txn_wkeys.clear();
-				for (OpNode op : cur_event.txn.getOps()) {
-					if (!op.isRead)
-						txn_wkeys.add(op.key_hash);
-				}
-
-				// (3.2) for each write key, find its frontier
-				for (long key : txn_wkeys) {
-					if (!perkey_frontier.containsKey(key)) {
-						perkey_frontier.put(key, new HashSet<TxnBeginEndEvent>());
-					}
-					Set<TxnBeginEndEvent> frontier = perkey_frontier.get(key);
-					// main update
-					OrochiCore(cur_event, frontier, key, g);
-				}
-
-			}
-		}
-	}
-
-	// add the time order edges for strict serializability
-	// (1) create two event for one txn, the start and end event
-	// (2) sort the events by time
-	// (3) use orochi's algorithm to add time order edges
-	public void AddTimeOrderEdges(PrecedenceGraph g) {
-		int alive_txns = 0;
-		// (1)
-		// UTBABUG: timestamps are not unique
-		Map<Long, List<TxnBeginEndEvent>> all_events = new HashMap<Long,List<TxnBeginEndEvent>>();
-		for (TxnNode txn : g.allNodes()) {
-			long begin_ts = txn.begin_timestamp;
-			long commit_ts = txn.commitTimestamp();
-
-			all_events.putIfAbsent(begin_ts, new LinkedList<TxnBeginEndEvent>());
-			all_events.putIfAbsent(commit_ts, new LinkedList<TxnBeginEndEvent>());
-
-			// NOTE: if two txns have the same timestamp, we treat them as concurrent which is pessimistic for Cobra.
-			// i.e., put begin ahead of commit for the same timestamp
-			all_events.get(begin_ts).add(0, new TxnBeginEndEvent(true, begin_ts, txn)); // add begin at the head
-			all_events.get(commit_ts).add(new TxnBeginEndEvent(false, commit_ts, txn)); // add commit at the end
-		}
-
-		// (2)
-		SortedMap<Long,List<TxnBeginEndEvent>> sorted_events = new TreeMap<Long, List<TxnBeginEndEvent>>(all_events);
-		// (3) frontier collects commit events that are most-recent
-		Set<TxnBeginEndEvent> frontier = new HashSet<TxnBeginEndEvent>();
-
-		for (List<TxnBeginEndEvent> cur_events : sorted_events.values()) {
-			for (TxnBeginEndEvent cur_event : cur_events) {
-
-				// update concurrency counter
-				if (cur_event.begin) {
-					alive_txns++;
-					this.max_concurrent_txns = Math.max(this.max_concurrent_txns, alive_txns);
-				} else {
-					alive_txns--;
-				}
-
-				// <<<<<<< Orochi core
-				if (cur_event.begin) {
-					// TO order when I found: commit.timestamp + drift < begin.timestamp
-					for (TxnBeginEndEvent e : frontier) {
-						assert !e.begin;
-						if (e.txn.commitTimestamp() + VeriConstants.TIME_DRIFT_THRESHOLD < cur_event.timestamp) {
-							g.addEdge(e.txn.getTxnid(), cur_event.txn.getTxnid(), EdgeType.TO);
-							// System.out.println(" TO: TXN[" + Long.toHexString(e.txn.getTxnid()) + "] ->
-							// [" + Long.toHexString(cur_event.txn.getTxnid()) + "]");
-							this.num_to++;
-						}
-					}
-				} else { // this is end event
-					Set<TxnBeginEndEvent> rm_events = new HashSet<TxnBeginEndEvent>();
-					for (TxnBeginEndEvent e : frontier) {
-						// remove from frontier when: commit.timestamp + drift < cur_event->txn.begin.timestamp
-						if (e.txn.commitTimestamp() + VeriConstants.TIME_DRIFT_THRESHOLD < cur_event.txn.begin_timestamp) {
-							rm_events.add(e);
-						}
-					}
-					// remove the ones which can be represented from frontier
-					frontier.removeAll(rm_events);
-					// add current event to frontier
-					frontier.add(cur_event);
-				}
-				// >>>>>>
-			}
-		}
-	}
-
-
-
 	public static void CheckValues(PrecedenceGraph pg) {
 		for (TxnNode n : pg.allNodes()) {
 			for (OpNode op : n.getOps()) {
@@ -683,67 +400,7 @@ public abstract class AbstractVerifier {
 		}
 	}
 
-	public static void CheckValues(PrecedenceGraph pg, Set<TxnNode> new_txns_this_turn) {
-		for (TxnNode n : new_txns_this_turn) {
-			for (OpNode op : n.getOps()) {
-				// check all reads read the same value from the corresponding writes
-				if (op.isRead) { continue; }
-				if (!pg.m_readFromMapping.containsKey(op.wid)) { continue; }
-				for (OpNode rop : pg.m_readFromMapping.get(op.wid)) {
-
-
-					if (op.val_hash != rop.val_hash) {
-						System.out.println("wop = " + op.toString());
-						System.out.println("rop = " + rop.toString());
-						System.out.println("write txn = " + pg.getNode(op.txnid).toString2());
-						System.out.println("read txn = " + pg.getNode(rop.txnid).toString2());
-					}
-
-
-					assert op.val_hash == rop.val_hash;
-				}
-			}
-		}
-	}
-
-	// ===== helper functions ======
-
-	private int max(int[] array) {
-		int max = 0;
-		for(int i : array) {
-			max = i > max ? i : max;
-		}
-		return max;
-	}
-
-	private float average(int[] array) {
-		if (array.length == 0) return 0;
-		int sum = 0;
-		for(int i:array) sum += i;
-		return (float)sum/array.length;
-	}
-
-
 	// === show results ===
-
-	public void ClearCounters() {
-		num_rmw_ww = 0;
-		num_ops = 0;
-		num_reads = 0;
-		num_writes = 0;
-		num_txns = 0;
-		max_concurrent_txns = -1;
-		//   about edges
-		num_wr = 0;
-		num_rw = 0;
-		num_co = 0;
-		num_to = 0;
-		num_anti_ww = 0;
-		num_infer_ww = 0;
-		num_unknown_rw = 0;
-		// constraints
-		num_merged_constraints = 0;
-	}
 
 	public String profResults() {
 		StringBuilder sb = new StringBuilder();
@@ -824,24 +481,5 @@ public abstract class AbstractVerifier {
 
 		return sb.toString();
 	}
-
-	// helper class for AddTimeOrderEdges(...)
-	static class TxnBeginEndEvent {
-		public boolean begin;
-		public long timestamp;
-		public TxnNode txn;
-
-		public TxnBeginEndEvent(boolean begin, long ts, TxnNode txn) {
-			this.begin = begin;
-			this.timestamp = ts;
-			this.txn = txn;
-		}
-
-		public String toString() {
-			return (begin ? "[Begin]" : "[Commit]") + ", " + Long.toHexString(timestamp) + " " + txn.toString();
-		}
-	}
-
-	//===============UnitTestCode================
 
 }

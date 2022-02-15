@@ -76,14 +76,7 @@ public class SIVerifier extends AbstractLogVerifier {
 	 * Note that it is possible for C to precede B in SI.
 	 */
 	private static Set<Constraint> generateConstraints(PrecedenceGraph graph) {
-		for (var a: graph.allNodes()) {
-			for (var writeOp: a.getOps()) {
-				if (writeOp.isRead) {
-					continue;
-				}
-
-				// TODO construct constraints
-			}
+		for (var b: graph.allEdges()) {
 		}
 
 		throw new UnimplementedError();
