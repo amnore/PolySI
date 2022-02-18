@@ -107,9 +107,13 @@ public class SIVerifier extends AbstractLogVerifier {
 					continue;
 				}
 
-				for (var bop : readOps.get(op.id)) {
+				for (var bop : readOps.getOrDefault(op.id, new HashSet<>())) {
 					var b = graph.getNode(bop.txnid);
 					for (var c : writeTxns.get(op.key_hash)) {
+						if (a == c) {
+							continue;
+						}
+
 						constraints.add(new SIConstraint(new SIEdge[] { new SIEdge(c, a, EdgeType.WW), },
 								new SIEdge[] { new SIEdge(b, c, EdgeType.RW), new SIEdge(a, c, EdgeType.WW) }));
 					}
@@ -158,7 +162,7 @@ class SISolver {
 	 * Each edge is associated with a literal. The edge exists in the graph iff. the
 	 * literal is true.
 	 *
-	 * 1. For WR edges, the literal is Lit.True
+	 * 1. For WR edges, the literal is asserted to be true
 	 *
 	 * 2. For WW and RW edges, the literal is created from the constraints. For edge
 	 * sets S1 and S2 in a same constraint, the literal of S1 is the negation of
@@ -185,7 +189,11 @@ class SISolver {
 		});
 
 		// add WR edges
-		precedenceGraph.allEdges().forEach(e -> graphA.addEdge(e.source(), e.target(), Lit.True));
+		precedenceGraph.allEdges().forEach(e -> {
+			var lit = new Lit(solver);
+			solver.assertTrue(lit);
+			graphA.addEdge(e.source(), e.target(), lit);
+		});
 
 		// add WW and RW edges
 		constraints.forEach(c -> {
@@ -214,9 +222,15 @@ class SISolver {
 			}));
 		});
 
-		Consumer<Network<TxnNode, Lit>> addGraph = g -> g.nodes()
-				.forEach(n -> g.successors(n).forEach(s -> g.edgesConnecting(n, s)
-						.forEach(e -> solver.assertEqual(e, graph.addEdge(nodeMap.get(n), nodeMap.get(s))))));
+		Consumer<Network<TxnNode, Lit>> addGraph = g -> {
+			for (var n : g.nodes()) {
+				for (var s : g.successors(n)) {
+					for (var e : g.edgesConnecting(n, s)) {
+						solver.assertEqual(e, graph.addEdge(nodeMap.get(n), nodeMap.get(s)));
+					}
+				}
+			}
+		};
 
 		addGraph.accept(graphA);
 		addGraph.accept(graphC);
