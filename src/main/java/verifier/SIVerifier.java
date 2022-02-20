@@ -91,8 +91,9 @@ public class SIVerifier extends AbstractLogVerifier {
 	 * For each triple of transactions A, B, C such that B reads A and C writes the
 	 * key B read, generate polygraph for the following two conditions:
 	 *
-	 * 1. C precedes A, then C ->(ww) A ->(wr) B 2. A precedes C, then A ->(wr) B
-	 * ->(rw) C, A ->(ww) C
+	 * 1. C precedes A, then C ->(ww) A ->(wr) B
+	 *
+	 * 2. A precedes C, then A ->(wr) B ->(rw) C, A ->(ww) C
 	 *
 	 * Note that it is possible for C to precede B in SI.
 	 */
@@ -155,7 +156,7 @@ class SISolver {
 	 *
 	 * First construct two graphs:
 	 *
-	 * 1. Graph A contains WR and WW edges.
+	 * 1. Graph A contains WR, WW and SO edges.
 	 *
 	 * 2. Graph B contains RW edges.
 	 *
@@ -193,6 +194,14 @@ class SISolver {
 			var lit = new Lit(solver);
 			solver.assertTrue(lit);
 			graphA.addEdge(e.source(), e.target(), lit);
+		});
+
+		// add SO edges
+		precedenceGraph.allNodes().stream().filter(n -> n.id != VeriConstants.INIT_TXN_ID).forEach(n -> {
+			var lit = new Lit(solver);
+			solver.assertTrue(lit);
+			var prevId = n.getPreviousClientTxn() == VeriConstants.NULL_TXN_ID ? VeriConstants.INIT_TXN_ID : n.getPreviousClientTxn();
+			graphA.addEdge(precedenceGraph.getNode(prevId), n, lit);
 		});
 
 		// add WW and RW edges
@@ -244,7 +253,7 @@ class SISolver {
 }
 
 enum EdgeType {
-	WW, WR, RW
+	WW, RW
 }
 
 @Data
