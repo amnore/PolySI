@@ -67,16 +67,16 @@ public class History<KeyType, ValueType> {
 		return txn;
 	}
 
-	public Event<KeyType, ValueType> addEvent(Transaction<KeyType, ValueType> transaction, boolean write, KeyType key, ValueType value) {
+	public Event<KeyType, ValueType> addEvent(Transaction<KeyType, ValueType> transaction, EventType type, KeyType key, ValueType value) {
 		var p = Pair.of(key, value);
-		if (write) {
+		if (type == EventType.WRITE) {
 			if (!transactions.containsKey(transaction.id) || writes.contains(p)) {
 				throw new InvalidHistoryError();
 			}
 			writes.add(p);
 		}
 
-		var ev = new Event<KeyType, ValueType>(transaction, write, key, value);
+		var ev = new Event<KeyType, ValueType>(transaction, type, key, value);
 		transaction.getEvents().add(ev);
 		return ev;
 	}
@@ -111,7 +111,7 @@ public class History<KeyType, ValueType> {
 
 		@EqualsAndHashCode.Include
 		@ToString.Include
-		private final boolean write;
+		private final EventType type;
 
 		@EqualsAndHashCode.Include
 		@ToString.Include
@@ -124,5 +124,9 @@ public class History<KeyType, ValueType> {
 
 	public enum TransactionStatus {
 		ONGOING, COMMIT
+	}
+
+	public enum EventType {
+		READ, WRITE
 	}
 }

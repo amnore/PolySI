@@ -21,6 +21,8 @@ import lombok.SneakyThrows;
 import util.UnimplementedError;
 import util.VeriConstants;
 
+import static graph.History.EventType.*;
+
 public class CobraHistoryLoader implements HistoryLoader<Long, CobraHistoryLoader.CobraValue> {
 	private final File logDir;
 
@@ -69,7 +71,7 @@ public class CobraHistoryLoader implements HistoryLoader<Long, CobraHistoryLoade
 
 		var initTxn = history.addTransaction(history.addSession(INIT_TXN_ID), INIT_TXN_ID);
 		for (var p : initWrites.entrySet()) {
-			history.addEvent(initTxn, true, p.getKey(), p.getValue());
+			history.addEvent(initTxn, WRITE, p.getKey(), p.getValue());
 		}
 
 		// check all transactions except init are committed
@@ -138,7 +140,7 @@ public class CobraHistoryLoader implements HistoryLoader<Long, CobraHistoryLoade
 				var value = in.readLong();
 
 				// use writeId as value because cobra guarantees its uniqueness
-				history.addEvent(current, true, key, new CobraValue(writeId, current.getId(), value));
+				history.addEvent(current, WRITE, key, new CobraValue(writeId, current.getId(), value));
 				break;
 			}
 			case 'R': {
@@ -165,7 +167,7 @@ public class CobraHistoryLoader implements HistoryLoader<Long, CobraHistoryLoade
 					}
 				}
 
-				history.addEvent(current, false, key, new CobraValue(writeId, writeTxnId, value));
+				history.addEvent(current, READ, key, new CobraValue(writeId, writeTxnId, value));
 				break;
 			}
 			default:

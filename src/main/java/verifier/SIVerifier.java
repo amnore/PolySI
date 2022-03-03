@@ -4,6 +4,7 @@ import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import com.google.common.collect.HashBiMap;
 import com.google.common.graph.*;
@@ -56,6 +57,9 @@ public class SIVerifier<KeyType, ValueType> {
 	 *
 	 * 2. A precedes C, then A ->(wr) B ->(rw) C, A ->(ww) C
 	 *
+	 * Furthermore, for each key and each pair of transactions A, B that have
+	 * written to this key, generate a constraint for them containing WW edges.
+	 *
 	 * Note that it is possible for C to precede B in SI.
 	 */
 	private Set<SIConstraint<KeyType, ValueType>> generateConstraints() {
@@ -63,15 +67,16 @@ public class SIVerifier<KeyType, ValueType> {
 		var constraints = new HashSet<SIConstraint<KeyType, ValueType>>();
 		var writes = new HashMap<KeyType, Set<Transaction<KeyType, ValueType>>>();
 
-		history.getEvents().stream().filter(History.Event::isWrite).forEach(ev -> {
-			writes.computeIfAbsent(ev.getKey(), k -> new HashSet<>()).add(ev.getTransaction());
-		});
+		history.getEvents().stream().filter(e -> e.getType() == History.EventType.WRITE)
+			.forEach(ev -> {
+				writes.computeIfAbsent(ev.getKey(), k -> new HashSet<>()).add(ev.getTransaction());
+			});
 
 		for (var a : history.getTransactions()) {
 			for (var b : readFrom.successors(a)) {
 				for (var key: readFrom.edgeValue(a, b).get()) {
 					for (var c : writes.get(key)) {
-						if (a == c) {
+						if (a == c || b == c) {
 							continue;
 						}
 
@@ -80,6 +85,19 @@ public class SIVerifier<KeyType, ValueType> {
 							List.of(new SIEdge<>(b, c, EdgeType.RW), new SIEdge<>(a, c, EdgeType.WW))
 						));
 					}
+				}
+			}
+		}
+
+		for (var txns: writes.values()) {
+			var list = new ArrayList<>(txns);
+
+			for (var i=0 ; i< list.size();i++) {
+				for (var j=i+1;j< list.size();j++) {
+					constraints.add(new SIConstraint<>(
+						List.of(new SIEdge<>(list.get(i), list.get(j), EdgeType.WW)),
+						List.of(new SIEdge<>(list.get(j), list.get(i), EdgeType.WW))
+					));
 				}
 			}
 		}

@@ -12,6 +12,10 @@ import graph.History.Session;
 import lombok.SneakyThrows;
 import util.UnimplementedError;
 
+import static graph.History.EventType.READ;
+import static graph.History.EventType.WRITE;
+
+@SuppressWarnings("UnstableApiUsage")
 public class DBCopHistoryLoader implements HistoryLoader<Long, Long> {
 	private final File logFile;
 	private History<Long, Long> history;
@@ -93,7 +97,7 @@ public class DBCopHistoryLoader implements HistoryLoader<Long, Long> {
 			if (!success) {
 				throw new InvalidHistoryError();
 			}
-			history.addEvent(txn, write, key, value);
+			history.addEvent(txn, write ? WRITE: READ, key, value);
 		}
 
 		var success = in.readBoolean();

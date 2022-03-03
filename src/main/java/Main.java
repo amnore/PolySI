@@ -50,7 +50,7 @@ class Audit implements Callable<Integer> {
 
 	@Override
 	public Integer call() {
-		HistoryLoader loader;
+		HistoryLoader<?, ?> loader;
 		switch (type) {
 		case COBRA:
 			loader = new CobraHistoryLoader(path);
@@ -66,7 +66,7 @@ class Audit implements Callable<Integer> {
 		var pass = true;
 		try {
 			profiler.startTick("ONESHOT_CONS");
-			var verifier = new SIVerifier(loader);
+			var verifier = new SIVerifier<>(loader);
 			profiler.endTick("ONESHOT_CONS");
 
 			profiler.startTick("ONESHOT_SOLVE");

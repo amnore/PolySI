@@ -15,6 +15,9 @@ import org.apache.commons.lang3.tuple.Pair;
 
 import graph.History.Transaction;
 
+import static graph.History.EventType.READ;
+import static graph.History.EventType.WRITE;
+
 @SuppressWarnings("UnstableApiUsage")
 public class PrecedenceGraph2<KeyType, ValueType> {
 	private final MutableGraph<Transaction<KeyType, ValueType>> sessionOrderGraph = GraphBuilder.directed().build();
@@ -45,9 +48,9 @@ public class PrecedenceGraph2<KeyType, ValueType> {
 		// add WR edges
 		var writes = new HashMap<Pair<KeyType, ValueType>, Transaction<KeyType, ValueType>>();
 		var events = history.getEvents();
-		events.stream().filter(History.Event::isWrite)
+		events.stream().filter(e -> e.getType() == WRITE)
 				.forEach(ev -> writes.put(Pair.of(ev.getKey(), ev.getValue()), ev.getTransaction()));
-		events.stream().filter(ev -> !ev.isWrite()).forEach(ev -> {
+		events.stream().filter(e -> e.getType() == READ).forEach(ev -> {
 			var writeTxn = writes.get(Pair.of(ev.getKey(), ev.getValue()));
 			var txn = ev.getTransaction();
 			if (!readFromGraph.hasEdgeConnecting(writeTxn, txn)) {
