@@ -19,6 +19,14 @@ public class Constraint {
 		chain_2 = chain2;
 	}
 
+	@Override
+	public String toString() {
+		return "Constraint{" +
+			"edge_set1=" + edge_set1 +
+			", edge_set2=" + edge_set2 +
+			'}';
+	}
+
 	public String toString(PrecedenceGraph g) {
 		return toString(g, false);
 	}

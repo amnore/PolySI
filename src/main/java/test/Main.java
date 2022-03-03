@@ -94,14 +94,6 @@ public class Main {
 			} else {
 				ChengLogger.println(LoggerType.ERROR, "[[[[ REJECT ]]]]");
 			}
-		} else if (args[1].equals("si")) {
-			var verifier = new SIVerifier(VeriConstants.LOG_FD_LOG);
-			boolean pass = verifier.audit();
-			if (pass) {
-				ChengLogger.println("[[[[ ACCEPT ]]]]");
-			} else {
-				ChengLogger.println(LoggerType.ERROR, "[[[[ REJECT ]]]]");
-			}
 		} else if (args[1].equals("continue")) {
 			throw new UnimplementedError();
 		} else if (args[1].equals("epoch")) {

@@ -241,6 +241,7 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 
 		ChengLogger.println("[1] #Clients=" + this.client_list.size());
 		ChengLogger.println("[1] global graph: #n=" + m_g.allNodes().size());
+		System.err.printf("Number of WR edges: %d\n", m_g.allEdges().size());
 		return m_g;
 	}
 
@@ -249,6 +250,7 @@ public class MonoSATVerifierOneshot extends AbstractLogVerifier {
 
 		prof.startTick("ONESHOT_GEN_CONS");
 		Set<Constraint> cons = GenConstraints(m_g);
+		System.err.printf("Number of constraints: %d\n\n", cons.size());
 		prof.endTick("ONESHOT_GEN_CONS");
 
 		prof.startTick("ONESHOT_PRUNE");
