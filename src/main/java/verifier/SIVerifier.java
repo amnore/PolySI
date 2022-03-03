@@ -2,9 +2,12 @@ package verifier;
 
 import java.util.*;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import com.google.common.collect.HashBiMap;
 import com.google.common.graph.*;
@@ -14,8 +17,8 @@ import graph.HistoryLoader;
 import graph.PrecedenceGraph2;
 import graph.History.Transaction;
 import io.grpc.netty.shaded.io.netty.util.internal.shaded.org.jctools.queues.MessagePassingQueue.Consumer;
+import kvClient.pb.Key;
 import lombok.Data;
-import lombok.extern.java.Log;
 import monosat.Lit;
 import monosat.Logic;
 import monosat.Solver;
@@ -26,19 +29,24 @@ import util.QuadConsumer;
 @SuppressWarnings("UnstableApiUsage")
 public class SIVerifier<KeyType, ValueType> {
 	private final History<KeyType, ValueType> history;
-	private final PrecedenceGraph2<KeyType, ValueType> graph;
 
 	public SIVerifier(HistoryLoader<KeyType, ValueType> loader) {
 		history = loader.loadHistory();
-		graph = new PrecedenceGraph2<>(history);
-		System.err.printf("Number of WR edges: %d\nSO edges: %d\n",
-			graph.getReadFrom().edges().stream().map(e -> graph.getReadFrom().edgeValue(e).get().size()).reduce(Integer::sum).get(),
-			graph.getSessionOrder().edges().size());
 	}
 
 	public boolean audit() {
-		var constraints = generateConstraints();
+		if (!verifyInternalConsistency(history)) {
+			return false;
+		}
+
+		var graph = new PrecedenceGraph2<>(history);
+		System.err.printf("Number of WR edges: %d\nSO edges: %d\n",
+			graph.getReadFrom().edges().stream().map(e -> graph.getReadFrom().edgeValue(e).get().size()).reduce(Integer::sum).get(),
+			graph.getSessionOrder().edges().size());
+
+		var constraints = generateConstraints(history, graph);
 		System.err.printf("Number of constraints: %d\n\n", constraints.size());
+
 		var solver = new SISolver<>(history, graph, constraints);
 		return solver.solve();
 	}
@@ -62,12 +70,15 @@ public class SIVerifier<KeyType, ValueType> {
 	 *
 	 * Note that it is possible for C to precede B in SI.
 	 */
-	private Set<SIConstraint<KeyType, ValueType>> generateConstraints() {
+	private Set<SIConstraint<KeyType, ValueType>> generateConstraints(
+		History<KeyType, ValueType> history,
+		PrecedenceGraph2<KeyType, ValueType> graph) {
 		var readFrom = graph.getReadFrom();
 		var constraints = new HashSet<SIConstraint<KeyType, ValueType>>();
 		var writes = new HashMap<KeyType, Set<Transaction<KeyType, ValueType>>>();
 
-		history.getEvents().stream().filter(e -> e.getType() == History.EventType.WRITE)
+		history.getEvents().stream()
+			.filter(e -> e.getType() == History.EventType.WRITE)
 			.forEach(ev -> {
 				writes.computeIfAbsent(ev.getKey(), k -> new HashSet<>()).add(ev.getTransaction());
 			});
@@ -103,14 +114,47 @@ public class SIVerifier<KeyType, ValueType> {
 		}
 		return constraints;
 	}
+
+	boolean verifyInternalConsistency(History<KeyType, ValueType> history) {
+		var writes = new HashMap<Pair<KeyType, ValueType>, Pair<Transaction<KeyType, ValueType>, Integer>>();
+		Function<History.EventType, Stream<Pair<Integer, History.Event<KeyType, ValueType>>>> getEvents =
+			type -> history.getTransactions().stream()
+				.flatMap(txn -> {
+					var events = txn.getEvents();
+					return IntStream.range(0, events.size())
+						.mapToObj(i -> Pair.of(i, events.get(i)))
+						.filter(p -> p.getRight().getType() == type);
+				});
+
+		getEvents.apply(History.EventType.WRITE).forEach(p -> {
+			var i = p.getLeft();
+			var ev = p.getRight();
+			writes.put(Pair.of(ev.getKey(), ev.getValue()),
+				Pair.of(ev.getTransaction(), i));
+		});
+
+		for (var p: getEvents.apply(History.EventType.READ).collect(Collectors.toList())) {
+			var i = p.getLeft();
+			var ev = p.getRight();
+			var writeEv = writes.get(Pair.of(ev.getKey(), ev.getValue()));
+
+			if (writeEv.getLeft() == ev.getTransaction()
+				&& writeEv.getRight() >= i) {
+				return false;
+			}
+		}
+		return true;
+	}
 }
 
 @SuppressWarnings("UnstableApiUsage")
 class SISolver<KeyType, ValueType> {
 	final Solver solver = new Solver();
-	final monosat.Graph graph = new monosat.Graph(solver);
-	final HashBiMap<Transaction<KeyType, ValueType>, Integer> nodeMap = HashBiMap.create();
-	final HashMap<Lit, Pair<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>> litEdges = new HashMap<>();
+
+
+	boolean solve() {
+		return solver.solve();
+	}
 
 	/*
 	 * Construct SISolver from constraints
@@ -139,49 +183,63 @@ class SISolver<KeyType, ValueType> {
 	SISolver(History<KeyType, ValueType> history,
 			 PrecedenceGraph2<KeyType, ValueType> precedenceGraph,
 			 Set<SIConstraint<KeyType, ValueType>> constraints) {
-		Supplier<MutableValueGraph<Transaction<KeyType, ValueType>, Set<Lit>>> newGraph =
-			() -> ValueGraphBuilder.directed()
-				.allowsSelfLoops(true)
-				.build();
-		QuadConsumer<MutableValueGraph<Transaction<KeyType, ValueType>, Set<Lit>>,
-			Transaction<KeyType, ValueType>,
-			Transaction<KeyType, ValueType>,
-			Lit> addEdge = (g, src, dst, lit) -> {
-			if (!g.hasEdgeConnecting(src, dst)) {
-				g.putEdgeValue(src, dst, new HashSet<>());
-			}
-			g.edgeValue(src, dst).get().add(lit);
-		};
 
-		var graphA = newGraph.get();
-		var graphB = newGraph.get();
-		var graphC = newGraph.get();
+		var monoGraph = new monosat.Graph(solver);
+		var nodeMap = new HashMap<Transaction<KeyType, ValueType>, Integer>();
+		var graphA = createWRAndSOGraph(history, precedenceGraph);
+		var graphB = createEmptyGraph(history);
 
 		history.getTransactions().forEach(n -> {
-			graphA.addNode(n);
-			graphB.addNode(n);
-			graphC.addNode(n);
-			nodeMap.put(n, graph.addNode());
+			nodeMap.put(n, monoGraph.addNode());
 		});
+
+		addConstraints(constraints, graphA, graphB);
+		var graphC = composition(history, graphA, graphB);
+
+		Consumer<ValueGraph<Transaction<KeyType, ValueType>, Set<Lit>>> addGraph = g -> {
+			for (var n : g.nodes()) {
+				for (var s : g.successors(n)) {
+					for (var e : g.edgeValue(n, s).orElse(Set.of())) {
+						solver.assertEqual(e, monoGraph.addEdge(nodeMap.get(n), nodeMap.get(s)));
+					}
+				}
+			}
+		};
+
+		addGraph.accept(graphA);
+		addGraph.accept(graphC);
+
+		solver.assertTrue(monoGraph.acyclic());
+	}
+
+	private MutableValueGraph<Transaction<KeyType, ValueType>, Set<Lit>>
+	createWRAndSOGraph(History<KeyType, ValueType> history,
+					   PrecedenceGraph2<KeyType, ValueType> precedenceGraph) {
+		var graphA = createEmptyGraph(history);
 
 		Consumer<Graph<Transaction<KeyType, ValueType>>> addToGraphA = (graph -> {
 			for (var e: graph.edges()) {
 				var lit = new Lit(solver);
 				solver.assertTrue(lit);
-				addEdge.accept(graphA, e.source(), e.target(), lit);
+				addEdge(graphA, e.source(), e.target(), lit);
 			}
 		});
 
-		// add WR and SO edges
 		addToGraphA.accept(precedenceGraph.getReadFrom().asGraph());
 		addToGraphA.accept(precedenceGraph.getSessionOrder());
+		return graphA;
+	}
 
+	private void
+	addConstraints(Set<SIConstraint<KeyType, ValueType>> constraints,
+				   MutableValueGraph<Transaction<KeyType, ValueType>, Set<Lit>> graphA,
+				   MutableValueGraph<Transaction<KeyType, ValueType>, Set<Lit>> graphB) {
 		// add WW and RW edges
 		constraints.forEach(c -> {
 			BiConsumer<Lit, List<SIEdge<KeyType, ValueType>>> addEdges = (lit, edges) -> {
 				edges.forEach(e -> {
 					var graph = e.type == EdgeType.WW ? graphA : graphB;
-					addEdge.accept(graph, e.from, e.to, lit);
+					addEdge(graph, e.from, e.to, lit);
 				});
 			};
 
@@ -189,8 +247,23 @@ class SISolver<KeyType, ValueType> {
 			addEdges.accept(lit, c.edges1);
 			addEdges.accept(Logic.not(lit), c.edges2);
 		});
+	}
 
-		// construct graphC
+	private MutableValueGraph<Transaction<KeyType, ValueType>, Set<Lit>>
+	createEmptyGraph(History<KeyType, ValueType> history) {
+		MutableValueGraph<Transaction<KeyType, ValueType>, Set<Lit>> g =
+			ValueGraphBuilder.directed().allowsSelfLoops(true).build();
+
+		history.getTransactions().forEach(g::addNode);
+		return g;
+	}
+
+	private MutableValueGraph<Transaction<KeyType, ValueType>, Set<Lit>>
+	composition(History<KeyType, ValueType> history,
+				MutableValueGraph<Transaction<KeyType, ValueType>, Set<Lit>> graphA,
+				MutableValueGraph<Transaction<KeyType, ValueType>, Set<Lit>> graphB) {
+		var graphC = createEmptyGraph(history);
+
 		for (var n: history.getTransactions()) {
 			var pred = graphA.predecessors(n);
 			var succ = graphB.successors(n);
@@ -201,33 +274,24 @@ class SISolver<KeyType, ValueType> {
 					var succEdges = graphB.edgeValue(n, s).orElse(Set.of());
 
 					predEdges.forEach(e1 -> succEdges.forEach(e2 -> {
-						addEdge.accept(graphC, p, s, Logic.and(e1, e2));
+						addEdge(graphC, p, s, Logic.and(e1, e2));
 					}));
 				}
 			}
 		}
-
-		Consumer<ValueGraph<Transaction<KeyType, ValueType>, Set<Lit>>> addGraph = g -> {
-			for (var n : g.nodes()) {
-				for (var s : g.successors(n)) {
-					for (var e : g.edgeValue(n, s).orElse(Set.of())) {
-						litEdges.put(e, Pair.of(n, s));
-						solver.assertEqual(e, graph.addEdge(nodeMap.get(n), nodeMap.get(s)));
-					}
-				}
-			}
-		};
-
-		addGraph.accept(graphA);
-		addGraph.accept(graphC);
-
-		solver.assertTrue(graph.acyclic());
+		return graphC;
 	}
 
-	boolean solve() {
-		var ret = solver.solve();
-		return ret;
-	}
+	private void addEdge(
+		MutableValueGraph<Transaction<KeyType, ValueType>, Set<Lit>> g,
+		Transaction<KeyType, ValueType> src,
+		Transaction<KeyType, ValueType> dst,
+		Lit lit) {
+		if (!g.hasEdgeConnecting(src, dst)) {
+			g.putEdgeValue(src, dst, new HashSet<>());
+		}
+		g.edgeValue(src, dst).get().add(lit);
+	};
 }
 
 enum EdgeType {

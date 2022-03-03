@@ -53,6 +53,11 @@ public class PrecedenceGraph2<KeyType, ValueType> {
 		events.stream().filter(e -> e.getType() == READ).forEach(ev -> {
 			var writeTxn = writes.get(Pair.of(ev.getKey(), ev.getValue()));
 			var txn = ev.getTransaction();
+
+			if (writeTxn == txn) {
+				return;
+			}
+
 			if (!readFromGraph.hasEdgeConnecting(writeTxn, txn)) {
 				readFromGraph.putEdgeValue(writeTxn, txn, new HashSet<>());
 			}
