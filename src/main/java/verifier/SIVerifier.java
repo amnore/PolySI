@@ -1,10 +1,7 @@
 package verifier;
 
 import java.util.*;
-import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
-import java.util.function.Function;
-import java.util.function.Supplier;
+import java.util.function.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -16,7 +13,6 @@ import graph.History;
 import graph.HistoryLoader;
 import graph.PrecedenceGraph2;
 import graph.History.Transaction;
-import io.grpc.netty.shaded.io.netty.util.internal.shaded.org.jctools.queues.MessagePassingQueue.Consumer;
 import kvClient.pb.Key;
 import lombok.Data;
 import monosat.Lit;
@@ -25,6 +21,7 @@ import monosat.Solver;
 import org.apache.commons.lang3.tuple.Pair;
 import org.checkerframework.checker.units.qual.K;
 import util.QuadConsumer;
+import util.TriConsumer;
 
 @SuppressWarnings("UnstableApiUsage")
 public class SIVerifier<KeyType, ValueType> {
@@ -32,6 +29,10 @@ public class SIVerifier<KeyType, ValueType> {
 
 	public SIVerifier(HistoryLoader<KeyType, ValueType> loader) {
 		history = loader.loadHistory();
+		System.err.printf("Sessions count: %d\nTransactions count: %d\nEvents count: %d\n",
+			history.getSessions().size(),
+			history.getTransactions().size(),
+			history.getEvents().size());
 	}
 
 	public boolean audit() {
@@ -40,12 +41,14 @@ public class SIVerifier<KeyType, ValueType> {
 		}
 
 		var graph = new PrecedenceGraph2<>(history);
-		System.err.printf("Number of WR edges: %d\nSO edges: %d\n",
-			graph.getReadFrom().edges().stream().map(e -> graph.getReadFrom().edgeValue(e).get().size()).reduce(Integer::sum).get(),
+		System.err.printf("WR edges count: %d\nSO edges count: %d\n",
+			graph.getReadFrom().edges().stream()
+				.map(e -> graph.getReadFrom().edgeValue(e).get().size())
+				.reduce(Integer::sum).get(),
 			graph.getSessionOrder().edges().size());
 
 		var constraints = generateConstraints(history, graph);
-		System.err.printf("Number of constraints: %d\n\n", constraints.size());
+		System.err.printf("Constraints count: %d\n\n", constraints.size());
 
 		var solver = new SISolver<>(history, graph, constraints);
 		return solver.solve();
@@ -151,34 +154,53 @@ public class SIVerifier<KeyType, ValueType> {
 class SISolver<KeyType, ValueType> {
 	final Solver solver = new Solver();
 
+	// The literals of WR and SO edges
+	final Map<Lit, EndpointPair<Transaction<KeyType, ValueType>>> edgeLiterals = new HashMap<>();
+
+	// The literals asserting that exactly one set of edges exists in the graph
+	// for each constraint
+	final Map<Lit, SIConstraint<KeyType, ValueType>> constraintLiterals = new HashMap<>();
 
 	boolean solve() {
-		return solver.solve();
+		var lits = Stream.concat(
+			edgeLiterals.keySet().stream(),
+			constraintLiterals.keySet().stream()).collect(Collectors.toList());
+
+		if (solver.solve(lits)) {
+			return true;
+		} else {
+			System.err.println("Conflicts:");
+			for (var lit: solver.getConflictClause().stream()
+				.map(Logic::not).collect(Collectors.toList())) {
+				if (edgeLiterals.containsKey(lit)) {
+					System.err.printf("Edge: %s\n", edgeLiterals.get(lit));
+				} else {
+					System.err.printf("Constraint: %s\n", constraintLiterals.get(lit));
+				}
+			}
+			return false;
+		}
 	}
 
 	/*
 	 * Construct SISolver from constraints
 	 *
 	 * First construct two graphs:
-	 *
 	 * 1. Graph A contains WR, WW and SO edges.
-	 *
 	 * 2. Graph B contains RW edges.
 	 *
-	 * Each edge is associated with a literal. The edge exists in the graph iff. the
-	 * literal is true.
+	 * For each edge in A and B, create a literal for it. The edge exists in
+	 * the final graph iff. the literal is true.
 	 *
-	 * 1. For WR edges, the literal is asserted to be true
+	 * Then, construct a third graph C using A and B: If P -> Q in A and Q -> R
+	 * in B, then P -> R in C The literal of P -> R is ((P -> Q) and (Q -> R)).
 	 *
-	 * 2. For WW and RW edges, the literal is created from the constraints. For edge
-	 * sets S1 and S2 in a same constraint, the literal of S1 is the negation of
-	 * S2's.
+	 * Lastly, we add graph A and C to monosat, resulting in the final graph.
 	 *
-	 * Then, we construct a third graph C using these two: If P -> Q in A and Q -> R
-	 * in B, then P -> R in C The literal of P -> R is the conjunction of their
-	 * literals.
-	 *
-	 * Lastly, we add graph A and C to monosat and assert this graph is acyclic.
+	 * Literals that are passed as assumptions to monograph:
+	 * 1. The literals of WR, SO edges, because those edges always exist.
+	 * 2. For each constraint, a literal that asserts exactly one set of edges
+	 *    exist in the graph.
 	 */
 	SISolver(History<KeyType, ValueType> history,
 			 PrecedenceGraph2<KeyType, ValueType> precedenceGraph,
@@ -196,7 +218,7 @@ class SISolver<KeyType, ValueType> {
 		addConstraints(constraints, graphA, graphB);
 		var graphC = composition(history, graphA, graphB);
 
-		Consumer<ValueGraph<Transaction<KeyType, ValueType>, Set<Lit>>> addGraph = g -> {
+		var addGraph = ((Consumer<ValueGraph<Transaction<KeyType, ValueType>, Set<Lit>>>) g -> {
 			for (var n : g.nodes()) {
 				for (var s : g.successors(n)) {
 					for (var e : g.edgeValue(n, s).orElse(Set.of())) {
@@ -204,7 +226,7 @@ class SISolver<KeyType, ValueType> {
 					}
 				}
 			}
-		};
+		});
 
 		addGraph.accept(graphA);
 		addGraph.accept(graphC);
@@ -220,7 +242,7 @@ class SISolver<KeyType, ValueType> {
 		Consumer<Graph<Transaction<KeyType, ValueType>>> addToGraphA = (graph -> {
 			for (var e: graph.edges()) {
 				var lit = new Lit(solver);
-				solver.assertTrue(lit);
+				edgeLiterals.put(lit, e);
 				addEdge(graphA, e.source(), e.target(), lit);
 			}
 		});
@@ -234,19 +256,34 @@ class SISolver<KeyType, ValueType> {
 	addConstraints(Set<SIConstraint<KeyType, ValueType>> constraints,
 				   MutableValueGraph<Transaction<KeyType, ValueType>, Set<Lit>> graphA,
 				   MutableValueGraph<Transaction<KeyType, ValueType>, Set<Lit>> graphB) {
-		// add WW and RW edges
-		constraints.forEach(c -> {
-			BiConsumer<Lit, List<SIEdge<KeyType, ValueType>>> addEdges = (lit, edges) -> {
-				edges.forEach(e -> {
-					var graph = e.type == EdgeType.WW ? graphA : graphB;
-					addEdge(graph, e.from, e.to, lit);
-				});
-			};
+		var addEdges = ((Function<List<SIEdge<KeyType, ValueType>>, Pair<Lit, Lit>>) edges -> {
+			// all means all edges exists in the graph.
+			// Similar for none.
+			Lit all = Lit.True, none = Lit.True;
+			for (var e: edges) {
+				var lit = new Lit(solver);
+				all = Logic.and(all, lit);
+				none = Logic.and(none, Logic.not(lit));
 
-			var lit = new Lit(solver);
-			addEdges.accept(lit, c.edges1);
-			addEdges.accept(Logic.not(lit), c.edges2);
+				if (e.getType().equals(EdgeType.WW)) {
+					addEdge(graphA, e.from, e.to, lit);
+				} else {
+					addEdge(graphB, e.from, e.to, lit);
+				}
+			}
+			return Pair.of(all, none);
 		});
+
+		for (var c: constraints) {
+			var p1 = addEdges.apply(c.edges1);
+			var p2 = addEdges.apply(c.edges2);
+
+			constraintLiterals.put(
+				Logic.or(
+					Logic.and(p1.getLeft(), p2.getRight()),
+					Logic.and(p2.getLeft(), p1.getRight())),
+				c);
+		}
 	}
 
 	private MutableValueGraph<Transaction<KeyType, ValueType>, Set<Lit>>
