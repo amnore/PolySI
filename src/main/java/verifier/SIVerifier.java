@@ -55,66 +55,77 @@ public class SIVerifier<KeyType, ValueType> {
 	}
 
 	/*
-	 * Generate constraints from a precedence graph
+	 * Generate constraints from a precedence graph.
+	 * Use coalescing to reduce the number of constraints produced.
 	 *
 	 * @param graph the graph to use
 	 *
 	 * @return the set of constraints generated
 	 *
-	 * For each triple of transactions A, B, C such that B reads A and C writes the
-	 * key B read, generate polygraph for the following two conditions:
+	 * For each pair of transactions A, C, generate the following constraint:
 	 *
-	 * 1. C precedes A, then C ->(ww) A ->(wr) B
+	 * 1. A precedes C, add A ->(ww) C. Let K be a key written by both A and C,
+	 *    for each transaction B such that A ->(wr, K) B, add B ->(rw) C.
 	 *
-	 * 2. A precedes C, then A ->(wr) B ->(rw) C, A ->(ww) C
-	 *
-	 * Furthermore, for each key and each pair of transactions A, B that have
-	 * written to this key, generate a constraint for them containing WW edges.
-	 *
-	 * Note that it is possible for C to precede B in SI.
+	 * 2. C precedes A, add C ->(ww) A.
+	 *    For each transaction B such that C ->(wr, K) A, add B ->(rw) A.
 	 */
 	private Set<SIConstraint<KeyType, ValueType>> generateConstraints(
 		History<KeyType, ValueType> history,
 		PrecedenceGraph2<KeyType, ValueType> graph) {
 		var readFrom = graph.getReadFrom();
-		var constraints = new HashSet<SIConstraint<KeyType, ValueType>>();
 		var writes = new HashMap<KeyType, Set<Transaction<KeyType, ValueType>>>();
 
 		history.getEvents().stream()
 			.filter(e -> e.getType() == History.EventType.WRITE)
 			.forEach(ev -> {
-				writes.computeIfAbsent(ev.getKey(), k -> new HashSet<>()).add(ev.getTransaction());
+				writes.computeIfAbsent(ev.getKey(), k -> new HashSet<>())
+					.add(ev.getTransaction());
 			});
+
+		var forEachWriteSameKey = ((Consumer<BiConsumer<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>>) f -> {
+			for (var txns : writes.values()) {
+				var list = new ArrayList<>(txns);
+				for (int i = 0; i < list.size(); i++) {
+					for (int j = i + 1; j < list.size(); j++) {
+						f.accept(list.get(i), list.get(j));
+					}
+				}
+			}
+		});
+
+		var constraintEdges = new HashMap<Pair<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>, List<SIEdge<KeyType, ValueType>>>();
+		forEachWriteSameKey.accept((a, c) -> {
+			var addEdge = ((BiConsumer<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>) (m, n) -> {
+				constraintEdges
+					.computeIfAbsent(Pair.of(m, n), p -> new ArrayList<>())
+					.add(new SIEdge<>(m, n, EdgeType.WW));
+			});
+			addEdge.accept(a, c);
+			addEdge.accept(c, a);
+		});
 
 		for (var a : history.getTransactions()) {
 			for (var b : readFrom.successors(a)) {
-				for (var key: readFrom.edgeValue(a, b).get()) {
+				for (var key : readFrom.edgeValue(a, b).get()) {
 					for (var c : writes.get(key)) {
 						if (a == c || b == c) {
 							continue;
 						}
 
-						constraints.add(new SIConstraint<>(
-							List.of(new SIEdge<>(c, a, EdgeType.WW)),
-							List.of(new SIEdge<>(b, c, EdgeType.RW), new SIEdge<>(a, c, EdgeType.WW))
-						));
+						constraintEdges.get(Pair.of(a, c))
+							.add(new SIEdge<>(b, c, EdgeType.RW));
 					}
 				}
 			}
 		}
 
-		for (var txns: writes.values()) {
-			var list = new ArrayList<>(txns);
+		var constraints = new HashSet<SIConstraint<KeyType, ValueType>>();
+		forEachWriteSameKey.accept((a, c) -> constraints.add(
+			new SIConstraint<>(
+				constraintEdges.get(Pair.of(a, c)),
+				constraintEdges.get(Pair.of(c, a)))));
 
-			for (var i=0 ; i< list.size();i++) {
-				for (var j=i+1;j< list.size();j++) {
-					constraints.add(new SIConstraint<>(
-						List.of(new SIEdge<>(list.get(i), list.get(j), EdgeType.WW)),
-						List.of(new SIEdge<>(list.get(j), list.get(i), EdgeType.WW))
-					));
-				}
-			}
-		}
 		return constraints;
 	}
 
@@ -136,7 +147,7 @@ public class SIVerifier<KeyType, ValueType> {
 				Pair.of(ev.getTransaction(), i));
 		});
 
-		for (var p: getEvents.apply(History.EventType.READ).collect(Collectors.toList())) {
+		for (var p : getEvents.apply(History.EventType.READ).collect(Collectors.toList())) {
 			var i = p.getLeft();
 			var ev = p.getRight();
 			var writeEv = writes.get(Pair.of(ev.getKey(), ev.getValue()));
@@ -170,14 +181,13 @@ class SISolver<KeyType, ValueType> {
 			return true;
 		} else {
 			System.err.println("Conflicts:");
-			for (var lit: solver.getConflictClause().stream()
-				.map(Logic::not).collect(Collectors.toList())) {
+			solver.getConflictClause().stream().map(Logic::not).forEach(lit -> {
 				if (edgeLiterals.containsKey(lit)) {
 					System.err.printf("Edge: %s\n", edgeLiterals.get(lit));
 				} else {
 					System.err.printf("Constraint: %s\n", constraintLiterals.get(lit));
 				}
-			}
+			});
 			return false;
 		}
 	}
@@ -240,7 +250,7 @@ class SISolver<KeyType, ValueType> {
 		var graphA = createEmptyGraph(history);
 
 		Consumer<Graph<Transaction<KeyType, ValueType>>> addToGraphA = (graph -> {
-			for (var e: graph.edges()) {
+			for (var e : graph.edges()) {
 				var lit = new Lit(solver);
 				edgeLiterals.put(lit, e);
 				addEdge(graphA, e.source(), e.target(), lit);
@@ -260,7 +270,7 @@ class SISolver<KeyType, ValueType> {
 			// all means all edges exists in the graph.
 			// Similar for none.
 			Lit all = Lit.True, none = Lit.True;
-			for (var e: edges) {
+			for (var e : edges) {
 				var lit = new Lit(solver);
 				all = Logic.and(all, lit);
 				none = Logic.and(none, Logic.not(lit));
@@ -274,7 +284,7 @@ class SISolver<KeyType, ValueType> {
 			return Pair.of(all, none);
 		});
 
-		for (var c: constraints) {
+		for (var c : constraints) {
 			var p1 = addEdges.apply(c.edges1);
 			var p2 = addEdges.apply(c.edges2);
 
@@ -301,12 +311,12 @@ class SISolver<KeyType, ValueType> {
 				MutableValueGraph<Transaction<KeyType, ValueType>, Set<Lit>> graphB) {
 		var graphC = createEmptyGraph(history);
 
-		for (var n: history.getTransactions()) {
+		for (var n : history.getTransactions()) {
 			var pred = graphA.predecessors(n);
 			var succ = graphB.successors(n);
 
-			for (var p: pred) {
-				for (var s: succ) {
+			for (var p : pred) {
+				for (var s : succ) {
 					var predEdges = graphA.edgeValue(p, n).orElse(Set.of());
 					var succEdges = graphB.edgeValue(n, s).orElse(Set.of());
 
@@ -328,7 +338,9 @@ class SISolver<KeyType, ValueType> {
 			g.putEdgeValue(src, dst, new HashSet<>());
 		}
 		g.edgeValue(src, dst).get().add(lit);
-	};
+	}
+
+	;
 }
 
 enum EdgeType {
