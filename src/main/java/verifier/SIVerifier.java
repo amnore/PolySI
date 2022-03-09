@@ -6,22 +6,17 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
-import com.google.common.collect.HashBiMap;
 import com.google.common.graph.*;
 
 import graph.History;
 import graph.HistoryLoader;
 import graph.PrecedenceGraph2;
 import graph.History.Transaction;
-import kvClient.pb.Key;
 import lombok.Data;
 import monosat.Lit;
 import monosat.Logic;
 import monosat.Solver;
 import org.apache.commons.lang3.tuple.Pair;
-import org.checkerframework.checker.units.qual.K;
-import util.QuadConsumer;
-import util.TriConsumer;
 
 @SuppressWarnings("UnstableApiUsage")
 public class SIVerifier<KeyType, ValueType> {
@@ -51,7 +46,17 @@ public class SIVerifier<KeyType, ValueType> {
 		System.err.printf("Constraints count: %d\n\n", constraints.size());
 
 		var solver = new SISolver<>(history, graph, constraints);
-		return solver.solve();
+		boolean accepted = solver.solve();
+		if (!accepted) {
+			var conflicts = solver.getConflicts();
+			System.err.println("Conflicts:");
+			conflicts.getLeft()
+				.forEach(p -> System.err.printf("Edge: %s\n", p));
+			conflicts.getRight()
+				.forEach(c -> System.err.printf("Constraint: %s\n", c));
+		}
+
+		return accepted;
 	}
 
 	/*
@@ -177,19 +182,22 @@ class SISolver<KeyType, ValueType> {
 			edgeLiterals.keySet().stream(),
 			constraintLiterals.keySet().stream()).collect(Collectors.toList());
 
-		if (solver.solve(lits)) {
-			return true;
-		} else {
-			System.err.println("Conflicts:");
-			solver.getConflictClause().stream().map(Logic::not).forEach(lit -> {
-				if (edgeLiterals.containsKey(lit)) {
-					System.err.printf("Edge: %s\n", edgeLiterals.get(lit));
-				} else {
-					System.err.printf("Constraint: %s\n", constraintLiterals.get(lit));
-				}
-			});
-			return false;
-		}
+		return solver.solve(lits);
+	}
+
+	Pair<Collection<EndpointPair<Transaction<KeyType, ValueType>>>,
+		Collection<SIConstraint<KeyType, ValueType>>> getConflicts() {
+		var edges = new ArrayList<EndpointPair<Transaction<KeyType, ValueType>>>();
+		var constraints = new ArrayList<SIConstraint<KeyType, ValueType>>();
+
+		solver.getConflictClause().stream().map(Logic::not).forEach(lit -> {
+			if (edgeLiterals.containsKey(lit)) {
+				edges.add(edgeLiterals.get(lit));
+			} else {
+				constraints.add(constraintLiterals.get(lit));
+			}
+		});
+		return Pair.of(edges, constraints);
 	}
 
 	/*
