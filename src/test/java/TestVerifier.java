@@ -1,5 +1,5 @@
-import graph.History;
-import graph.HistoryLoader;
+import history.History;
+import history.HistoryLoader;
 import lombok.AllArgsConstructor;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
@@ -10,9 +10,9 @@ import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static history.History.EventType.*;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static graph.History.EventType.*;
 
 public class TestVerifier {
 	@Test

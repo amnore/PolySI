@@ -1,11 +1,10 @@
 import java.nio.file.Path;
 import java.util.concurrent.Callable;
 
-import graph.CobraHistoryLoader;
-import graph.DBCopHistoryLoader;
-import graph.HistoryDumper;
-import graph.HistoryLoader;
-import graph.HistoryParser;
+import history.HistoryLoader;
+import history.HistoryParser;
+import history.loaders.CobraHistoryLoader;
+import history.loaders.DBCopHistoryLoader;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -15,7 +14,7 @@ import util.UnimplementedError;
 import verifier.SIVerifier;
 
 @Command(name = "verifier", mixinStandardHelpOptions = true, version = "verifier 0.0.1", subcommands = { Audit.class,
-		Cobra.class, Convert.class })
+		Convert.class })
 public class Main implements Callable<Integer> {
 	public static void main(String[] args) {
 		var cmd = new CommandLine(new Main());
@@ -24,28 +23,16 @@ public class Main implements Callable<Integer> {
 	}
 
 	@Override
-	public Integer call() throws Exception {
+	public Integer call() {
 		CommandLine.usage(this, System.err);
 		return -1;
-	}
-}
-
-@Command(name = "cobra")
-class Cobra implements Callable<Integer> {
-	@Parameters(index = "0..*")
-	private String[] args = {};
-
-	@Override
-	public Integer call() {
-		test.Main.main(args);
-		return 0;
 	}
 }
 
 @Command(name = "audit", mixinStandardHelpOptions = true)
 class Audit implements Callable<Integer> {
 	@Option(names = { "-t", "--type" }, description = "history type: ${COMPLETION-CANDIDATES}")
-	private HistoryType type = HistoryType.COBRA;
+	private final HistoryType type = HistoryType.COBRA;
 
 	@Parameters(description = "history path")
 	private Path path;
@@ -95,10 +82,10 @@ class Audit implements Callable<Integer> {
 @Command(name = "convert", mixinStandardHelpOptions = true)
 class Convert implements Callable<Integer> {
 	@Option(names = { "-f", "--from" }, description = "input history type: ${COMPLETION-CANDIDATES}")
-	private HistoryType inType = HistoryType.COBRA;
+	private final HistoryType inType = HistoryType.COBRA;
 
 	@Option(names = { "-o", "--output" }, description = "input history type: ${COMPLETION-CANDIDATES}")
-	private HistoryType outType = HistoryType.DBCOP;
+	private final HistoryType outType = HistoryType.DBCOP;
 
 	@Parameters(description = "input history path", index = "0")
 	private Path inPath;

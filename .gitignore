@@ -223,6 +223,9 @@ tags
 
 # Support for Project snippet scope
 
+# maven
+target
+
 ### Gradle ###
 .gradle
 **/build/

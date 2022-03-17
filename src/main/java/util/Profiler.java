@@ -11,13 +11,13 @@ import org.apache.commons.lang3.tuple.Pair;
 public class Profiler {
 
 	// global vars
-	private static HashMap<Long,Profiler> profilers = new HashMap<Long,Profiler>();
+	private static final HashMap<Long,Profiler> profilers = new HashMap<Long,Profiler>();
 
 	// local vars
-	private HashMap<String, Long> start_time = new HashMap<String, Long>();
-	private HashMap<String, Long> total_time = new HashMap<String, Long>();
-	private HashMap<String, Integer> counter = new HashMap<String, Integer>();
-	private List<String> tags = new ArrayList<>();
+	private final HashMap<String, Long> start_time = new HashMap<String, Long>();
+	private final HashMap<String, Long> total_time = new HashMap<String, Long>();
+	private final HashMap<String, Integer> counter = new HashMap<String, Integer>();
+	private final List<String> tags = new ArrayList<>();
 
 	public synchronized static Profiler getInstance() {
 		long tid = Thread.currentThread().getId();

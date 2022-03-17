@@ -1,6 +1,7 @@
-import graph.History;
-import graph.HistoryLoader;
-import graph.PrecedenceGraph2;
+import graph.PrecedenceGraph;
+import history.History;
+import history.HistoryLoader;
+
 import org.apache.commons.lang3.tuple.Triple;
 import org.junit.jupiter.api.Test;
 
@@ -8,9 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static graph.History.*;
-import static graph.History.EventType.*;
-import static graph.History.EventType.READ;
+import static history.History.*;
+import static history.History.EventType.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class TestPrecedenceGraph {
@@ -26,7 +26,7 @@ public class TestPrecedenceGraph {
 					Triple.of(WRITE, "0", 1)))
 		)).loadHistory();
 
-		var g = new PrecedenceGraph2<>(h);
+		var g = new PrecedenceGraph<>(h);
 		var rf = g.getReadFrom();
 		var so = g.getSessionOrder();
 

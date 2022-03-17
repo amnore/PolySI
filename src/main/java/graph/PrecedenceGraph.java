@@ -1,145 +1,76 @@
 package graph;
 
-import java.util.ArrayList;
-import java.util.Collection;
+import static history.History.EventType.READ;
+import static history.History.EventType.WRITE;
+
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.Map;
 import java.util.Set;
 
-import com.google.common.graph.EndpointPair;
+import com.google.common.graph.Graph;
 import com.google.common.graph.GraphBuilder;
-import com.google.common.graph.Graphs;
 import com.google.common.graph.MutableGraph;
+import com.google.common.graph.MutableValueGraph;
+import com.google.common.graph.ValueGraph;
+import com.google.common.graph.ValueGraphBuilder;
 
-import graph.TxnNode.TxnType;
-import util.ChengLogger;
-import util.VeriConstants;
-import util.VeriConstants.LoggerType;
+import org.apache.commons.lang3.tuple.Pair;
 
+import history.History;
+import history.History.Transaction;
 
-// a wrapper for graph
-public class PrecedenceGraph {
+@SuppressWarnings("UnstableApiUsage")
+public class PrecedenceGraph<KeyType, ValueType> {
+	private final MutableGraph<Transaction<KeyType, ValueType>> sessionOrderGraph = GraphBuilder.directed().build();
+	private final MutableValueGraph<Transaction<KeyType, ValueType>, Set<KeyType>> readFromGraph = ValueGraphBuilder.directed().build();
 
-	private MutableGraph<TxnNode> g;
-	// mapping txnid=>node
-	private HashMap<Long,TxnNode> tindex;
-	// read-from dependency, wid => {OpNode, ...}
-	public Map<Long, Set<OpNode>> m_readFromMapping = null;
-
-
-
-	// ======Constructors========
-
-	public PrecedenceGraph() {
-		g = GraphBuilder.directed().allowsSelfLoops(false).build();
-		tindex = new HashMap<>();
-		m_readFromMapping = new HashMap<>();
-	}
-	// ======Graph=======
-
-	public MutableGraph<TxnNode> getGraph() {
-		return g;
-	}
-
-
-	// =======Nodes=========
-
-	public Collection<TxnNode> allNodes() {
-		return tindex.values();
-	}
-
-	public Set<Long> allTxnids() {
-		return tindex.keySet();
-	}
-
-	public boolean containTxnid(long id) {
-		return tindex.containsKey(id);
-	}
-
-	public TxnNode getNode(long id) {
-		if (tindex.containsKey(id)) {
-			return tindex.get(id);
-		}
-		return null;
-	}
-
-	public void addTxnNode(TxnNode n) {
-		// because of the inconsistency of logs, we may create an empty node,
-		assert !tindex.containsKey(n.getTxnid());
-		g.addNode(n);
-		tindex.put(n.getTxnid(), n);
-	}
-
-	public Set<TxnNode> successors(TxnNode n) {
-		return g.successors(n);
-	}
-
-	public Set<TxnNode> predecessors(TxnNode n) {
-		return g.predecessors(n);
-	}
-
-	// =====Edges=====
-
-	public Set<EndpointPair<TxnNode>> allEdges() {
-		return g.edges();
-	}
-
-	public void addEdge(long fr, long to, EdgeType et) {
-		assert tindex.containsKey(fr) && tindex.containsKey(to);
-		TxnNode src = tindex.get(fr);
-		TxnNode dst = tindex.get(to);
-		g.putEdge(src, dst);
-	}
-
-	public void addEdge(TxnNode fr, TxnNode to, EdgeType et) {
-		assert tindex.containsKey(fr.getTxnid()) && tindex.containsKey(to.getTxnid());
-		g.putEdge(fr, to);
-	}
-
-	// =====WW dependency=====
-
-	public String toString() {
-		StringBuilder ret = new StringBuilder();
-		ret.append("PrecedenceGraph. #txn=" + allNodes().size() + " #edges=" + allEdges().size() + "\n");
-		ret.append("                 #w_has_read=" + m_readFromMapping.size() + "\n");
-		return ret.toString();
-	}
-
-	/*
-	 * Check whether this graph is complete, which means all transactions are
-	 * commited, except the initial one.
+	/**
+	 * Build a graph from a history
+	 *
+	 * The built graph contains SO and WR edges
 	 */
-	public boolean isComplete() {
-		for (var txn : allNodes()) {
-			if (txn.type() != TxnType.COMMIT
-					&& txn.getTxnid() != VeriConstants.INIT_TXN_ID) {
-				return false;
-			}
-		}
+	public PrecedenceGraph(History<KeyType, ValueType> history) {
+		history.getTransactions().forEach(txn -> {
+			sessionOrderGraph.addNode(txn);
+			readFromGraph.addNode(txn);
+		});
 
-		return true;
+		// add SO edges
+		history.getSessions().forEach(session -> {
+			Transaction<KeyType, ValueType> prevTxn = null;
+			for (var txn : session.getTransactions()) {
+				if (prevTxn != null) {
+					sessionOrderGraph.putEdge(prevTxn, txn);
+				}
+				prevTxn = txn;
+			}
+		});
+
+		// add WR edges
+		var writes = new HashMap<Pair<KeyType, ValueType>, Transaction<KeyType, ValueType>>();
+		var events = history.getEvents();
+		events.stream().filter(e -> e.getType() == WRITE)
+				.forEach(ev -> writes.put(Pair.of(ev.getKey(), ev.getValue()), ev.getTransaction()));
+		events.stream().filter(e -> e.getType() == READ).forEach(ev -> {
+			var writeTxn = writes.get(Pair.of(ev.getKey(), ev.getValue()));
+			var txn = ev.getTransaction();
+
+			if (writeTxn == txn) {
+				return;
+			}
+
+			if (!readFromGraph.hasEdgeConnecting(writeTxn, txn)) {
+				readFromGraph.putEdgeValue(writeTxn, txn, new HashSet<>());
+			}
+			readFromGraph.edgeValue(writeTxn, txn).get().add(ev.getKey());
+		});
 	}
 
-	/*
-	 * Check whether all reads read the same value from the corresponding write
-	 */
-	public boolean readWriteMatches() {
-		for (var txn : allNodes()) {
-			for (OpNode op : txn.getOps()) {
-				if (op.isRead || !m_readFromMapping.containsKey(op.wid)) {
-					continue;
-				}
+	public Graph<Transaction<KeyType, ValueType>> getSessionOrder() {
+		return sessionOrderGraph;
+	}
 
-				for (OpNode rop : m_readFromMapping.get(op.wid)) {
-					if (op.val_hash != rop.val_hash) {
-						return false;
-					}
-				}
-			}
-		}
-
-		return true;
+	public ValueGraph<Transaction<KeyType, ValueType>, Set<KeyType>> getReadFrom() {
+		return readFromGraph;
 	}
 }

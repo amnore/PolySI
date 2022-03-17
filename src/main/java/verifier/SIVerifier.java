@@ -8,10 +8,10 @@ import java.util.stream.Stream;
 
 import com.google.common.graph.*;
 
-import graph.History;
-import graph.HistoryLoader;
-import graph.PrecedenceGraph2;
-import graph.History.Transaction;
+import graph.PrecedenceGraph;
+import history.History;
+import history.HistoryLoader;
+import history.History.Transaction;
 import lombok.Data;
 import monosat.Lit;
 import monosat.Logic;
@@ -43,7 +43,7 @@ public class SIVerifier<KeyType, ValueType> {
 		}
 
 		profiler.startTick("SI_GEN_PREC_GRAPH");
-		var graph = new PrecedenceGraph2<>(history);
+		var graph = new PrecedenceGraph<>(history);
 		profiler.endTick("SI_GEN_PREC_GRAPH");
 		System.err.printf("WR edges count: %d\nSO edges count: %d\n",
 			graph.getReadFrom().edges().stream()
@@ -93,7 +93,7 @@ public class SIVerifier<KeyType, ValueType> {
 	 */
 	private Set<SIConstraint<KeyType, ValueType>> generateConstraints(
 		History<KeyType, ValueType> history,
-		PrecedenceGraph2<KeyType, ValueType> graph) {
+		PrecedenceGraph<KeyType, ValueType> graph) {
 		var readFrom = graph.getReadFrom();
 		var writes = new HashMap<KeyType, Set<Transaction<KeyType, ValueType>>>();
 
@@ -237,7 +237,7 @@ class SISolver<KeyType, ValueType> {
 	 *    exist in the graph.
 	 */
 	SISolver(History<KeyType, ValueType> history,
-			 PrecedenceGraph2<KeyType, ValueType> precedenceGraph,
+			 PrecedenceGraph<KeyType, ValueType> precedenceGraph,
 			 Set<SIConstraint<KeyType, ValueType>> constraints) {
 		var profiler = Profiler.getInstance();
 
@@ -292,7 +292,7 @@ class SISolver<KeyType, ValueType> {
 
 	private MutableValueGraph<Transaction<KeyType, ValueType>, Set<Lit>>
 	createWRAndSOGraph(History<KeyType, ValueType> history,
-					   PrecedenceGraph2<KeyType, ValueType> precedenceGraph) {
+					   PrecedenceGraph<KeyType, ValueType> precedenceGraph) {
 		var graphA = createEmptyGraph(history);
 
 		Consumer<Graph<Transaction<KeyType, ValueType>>> addToGraphA = (graph -> {
@@ -386,7 +386,6 @@ class SISolver<KeyType, ValueType> {
 		g.edgeValue(src, dst).get().add(lit);
 	}
 
-	;
 }
 
 enum EdgeType {

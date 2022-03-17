@@ -1,5 +1,5 @@
-import graph.History;
-import graph.HistoryLoader;
+import history.History;
+import history.HistoryLoader;
 import lombok.AllArgsConstructor;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
