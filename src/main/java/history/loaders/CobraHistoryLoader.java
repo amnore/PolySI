@@ -12,8 +12,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
-import java.util.function.Consumer;
+import java.util.function.BiFunction;
+import java.util.stream.Collectors;
 
 import lombok.Data;
 import org.apache.commons.lang3.tuple.Pair;
@@ -224,48 +226,55 @@ public class CobraHistoryLoader implements HistoryParser<Long, CobraHistoryLoade
 	}
 
 	@Override
-	public History<Long, Long> toLongLongHistory(History<Long, CobraValue> history) {
-		var newHistory = new History<Long, Long>();
-		for (var session : history.getSessions()) {
-			var newSession = newHistory.addSession(session.getId());
-			for (var txn : session.getTransactions()) {
-				var newTxn = newHistory.addTransaction(newSession, txn.getId());
-				for (var ev : txn.getEvents()) {
-					newHistory.addEvent(newTxn, ev.getType(), ev.getKey(), ev.getValue().writeId);
-				}
+	public <T, U> History<Long, CobraValue> convertFrom(History<T, U> history) {
+		var events = history.getEvents();
+		var keys = Utils.getIdMap(events.stream().map(ev -> ev.getKey()), 1);
+		var writes = Utils.getIdMap(
+				events.stream().filter(ev -> ev.getType() == WRITE).map(ev -> Pair.of(ev.getKey(), ev.getValue())),
+				0x10000000);
+		var writeTxns = events.stream().filter(ev -> ev.getType() == WRITE)
+				.map(ev -> Pair.of(Pair.of(ev.getKey(), ev.getValue()), ev.getTransaction().getId()))
+				.collect(Collectors.toMap(Pair::getKey, Pair::getValue));
+
+		var txnReads = new HashSet<Pair<Transaction<T, U>, T>>();
+		var txnWrites = new HashMap<Pair<Transaction<T, U>, T>, Integer>();
+		var writeCount = new HashMap<Pair<Transaction<T, U>, T>, Integer>();
+		var incCount = ((BiFunction<Pair<Transaction<T, U>, T>, Integer, Integer>) (k, c) -> {
+			if (c == null) {
+				return 1;
 			}
-		}
-
-		return newHistory;
-	}
-
-	@Override
-	public History<Long, CobraValue> fromLongLongHistory(History<Long, Long> history) {
-		var newHistory = new History<Long, CobraValue>();
-		var writes = new HashMap<Pair<Long, Long>, Pair<Long, Long>>();
-
-		history.getEvents().stream().filter(ev -> ev.getType() == WRITE).forEach(new Consumer<Event<Long, Long>>() {
-			private long writeId = 0x10000000L;
-
-			@Override
-			public void accept(Event<Long, Long> ev) {
-				writes.put(Pair.of(ev.getKey(), ev.getValue()), Pair.of(writeId++, ev.getTransaction().getId()));
-			}
+			return c + 1;
 		});
+		events.stream().filter(ev -> ev.getType() == WRITE)
+				.forEach(ev -> writeCount.compute(Pair.of(ev.getTransaction(), ev.getKey()), incCount));
 
-		for (var session : history.getSessions()) {
-			var newSession = newHistory.addSession(session.getId());
-			for (var txn : session.getTransactions()) {
-				var newTxn = newHistory.addTransaction(newSession, txn.getId());
-				for (var ev : txn.getEvents()) {
-					var write = writes.get(Pair.of(ev.getKey(), ev.getValue()));
-					newHistory.addEvent(newTxn, ev.getType(), ev.getKey(),
-							new CobraValue(write.getLeft(), write.getRight(), ev.getValue()));
+		return Utils.convertHistory(history, ev -> {
+			var kv = Pair.of(ev.getKey(), ev.getValue());
+			var id = writes.get(kv);
+			var txnId = ev.getType() == WRITE ? ev.getTransaction().getId() : writeTxns.get(kv);
+			return Pair.of(keys.get(ev.getKey()), new CobraValue(id, txnId, id));
+		}, ev -> {
+			var txnAndKey = Pair.of(ev.getTransaction(), ev.getKey());
+			switch (ev.getType()) {
+			case READ:
+				// only allow one read per txn and must read from others
+				// leave only the first read if it is before writes
+				if (txnWrites.containsKey(txnAndKey) || txnReads.contains(txnAndKey)) {
+					return false;
 				}
+				txnReads.add(txnAndKey);
+				break;
+			case WRITE:
+				// only allow one write per txn
+				// leave only the last write
+				var count = txnWrites.compute(txnAndKey, incCount);
+				if (count < writeCount.get(txnAndKey)) {
+					return false;
+				}
+				break;
 			}
-		}
-
-		return newHistory;
+			return true;
+		});
 	}
 
 	@Data

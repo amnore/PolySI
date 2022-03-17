@@ -11,14 +11,35 @@ import java.util.stream.Collectors;
 
 import lombok.ToString;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.commons.lang3.tuple.Triple;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
 
+@NoArgsConstructor
 public class History<KeyType, ValueType> {
 	private final Map<Long, Session<KeyType, ValueType>> sessions = new HashMap<>();
 	private final Map<Long, Transaction<KeyType, ValueType>> transactions = new HashMap<>();
 	private final Set<Pair<KeyType, ValueType>> writes = new HashSet<>();
+
+	public History(Set<Long> sessions,
+			Map<Long, List<Long>> transactions,
+			Map<Long, List<Triple<History.EventType, KeyType, ValueType>>> events) {
+		var sessionMap = sessions.stream()
+			.map(id -> Pair.of(id, addSession(id)))
+			.collect(Collectors.toMap(Pair::getKey, Pair::getValue));
+
+		var txnMap = transactions.entrySet().stream()
+			.flatMap(e -> e.getValue().stream().map(id -> {
+				var s = sessionMap.get(e.getKey());
+				return Pair.of(id, addTransaction(s, id));
+			})).collect(Collectors.toMap(Pair::getKey, Pair::getValue));
+
+		events.forEach((id, list) -> list.forEach(e -> addEvent(
+			txnMap.get(id), e.getLeft(), e.getMiddle(), e.getRight()
+		)));
+	}
 
 	public Collection<Session<KeyType, ValueType>> getSessions() {
 		return sessions.values();
@@ -61,7 +82,8 @@ public class History<KeyType, ValueType> {
 		return txn;
 	}
 
-	public Event<KeyType, ValueType> addEvent(Transaction<KeyType, ValueType> transaction, EventType type, KeyType key, ValueType value) {
+	public Event<KeyType, ValueType> addEvent(Transaction<KeyType, ValueType> transaction, EventType type, KeyType key,
+			ValueType value) {
 		var p = Pair.of(key, value);
 		if (type == EventType.WRITE) {
 			if (!transactions.containsKey(transaction.id) || writes.contains(p)) {
@@ -92,7 +114,9 @@ public class History<KeyType, ValueType> {
 		@ToString.Include
 		private final long id;
 
+		@EqualsAndHashCode.Include
 		private final Session<KeyType, ValueType> session;
+
 		private final List<Event<KeyType, ValueType>> events = new ArrayList<>();
 		private TransactionStatus status = TransactionStatus.ONGOING;
 	}
@@ -101,6 +125,7 @@ public class History<KeyType, ValueType> {
 	@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 	@ToString(onlyExplicitlyIncluded = true)
 	public static class Event<KeyType, ValueType> {
+		@EqualsAndHashCode.Include
 		private final Transaction<KeyType, ValueType> transaction;
 
 		@EqualsAndHashCode.Include

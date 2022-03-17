@@ -10,16 +10,22 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import com.google.common.io.LittleEndianDataInputStream;
 import com.google.common.io.LittleEndianDataOutputStream;
 
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
+
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
 
 import history.*;
@@ -180,12 +186,12 @@ public class DBCopHistoryLoader implements HistoryParser<Long, Long> {
 	}
 
 	@Override
-	public History<Long, Long> toLongLongHistory(History<Long, Long> history) {
-		return history;
-	}
+	public <T, U> History<Long, Long> convertFrom(History<T, U> history) {
+		var events = history.getEvents();
+		var keys = Utils.getIdMap(events.stream().map(Event::getKey), 1);
+		var values = Utils.getIdMap(events.stream().map(Event::getValue), 1);
 
-	@Override
-	public History<Long, Long> fromLongLongHistory(History<Long, Long> history) {
-		return history;
+		return Utils.convertHistory(history, ev -> Pair.of(keys.get(ev.getKey()), values.get(ev.getValue())),
+				ev -> true);
 	}
 }

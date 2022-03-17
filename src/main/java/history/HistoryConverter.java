@@ -1,6 +1,5 @@
 package history;
 
 public interface HistoryConverter<KeyType, ValueType> {
-	History<Long, Long> toLongLongHistory(History<KeyType, ValueType> history);
-	History<KeyType, ValueType> fromLongLongHistory(History<Long, Long> history);
+	<T, U> History<KeyType, ValueType> convertFrom(History<T, U> history);
 }

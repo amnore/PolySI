@@ -1,6 +1,7 @@
 import java.nio.file.Path;
 import java.util.concurrent.Callable;
 
+import history.History;
 import history.HistoryLoader;
 import history.HistoryParser;
 import history.loaders.CobraHistoryLoader;
@@ -95,8 +96,8 @@ class Convert implements Callable<Integer> {
 
 	@Override
 	public Integer call() {
-		HistoryParser in;
-		HistoryParser out;
+		HistoryParser<?, ?> in;
+		HistoryParser<?, ?> out;
 
 		switch (inType) {
 		case COBRA:
@@ -121,13 +122,14 @@ class Convert implements Callable<Integer> {
 		}
 
 		var oldHistory = in.loadHistory();
-		var internalHistory = in.toLongLongHistory(oldHistory);
-		var newHistory = out.fromLongLongHistory(internalHistory);
-		out.dumpHistory(newHistory);
+		convertAndDump(out, oldHistory);
 
 		return 0;
 	}
 
+	private <T, U> void convertAndDump(HistoryParser<T, U> parser, History<?, ?> history) {
+		parser.dumpHistory(parser.convertFrom(history));
+	}
 }
 
 enum HistoryType {
