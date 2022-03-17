@@ -1,19 +1,25 @@
 package graph;
 
 import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 import lombok.Data;
 import org.apache.commons.lang3.tuple.Pair;
 
 import graph.History.Event;
+import graph.History.EventType;
 import graph.History.Session;
 import graph.History.Transaction;
 import graph.History.TransactionStatus;
@@ -23,7 +29,7 @@ import util.VeriConstants;
 
 import static graph.History.EventType.*;
 
-public class CobraHistoryLoader implements HistoryLoader<Long, CobraHistoryLoader.CobraValue> {
+public class CobraHistoryLoader implements HistoryParser<Long, CobraHistoryLoader.CobraValue> {
 	private final File logDir;
 
 	public static long INIT_WRITE_ID = 0xbebeebeeL;
@@ -97,7 +103,8 @@ public class CobraHistoryLoader implements HistoryLoader<Long, CobraHistoryLoade
 	 * (read, write_TxnId, writeId, key_hash, value) : 33B <br>
 	 */
 	@SneakyThrows
-	public void extractLog(DataInputStream in, History<Long, CobraValue> history, Map<Long, CobraValue> initWrites, Session<Long, CobraValue> session) {
+	public void extractLog(DataInputStream in, History<Long, CobraValue> history, Map<Long, CobraValue> initWrites,
+			Session<Long, CobraValue> session) {
 		Transaction<Long, CobraValue> current = null;
 		while (true) {
 			// break if end (for file)
@@ -160,8 +167,7 @@ public class CobraHistoryLoader implements HistoryLoader<Long, CobraHistoryLoade
 						writeTxnId = INIT_TXN_ID;
 						// if there is no such write op in init txn, add one
 						initWrites.computeIfAbsent(key, k -> new CobraValue(key, INIT_TXN_ID, value));
-					} else if ((writeId != GC_WID_FALSE && writeId != GC_WID_TRUE)
-							|| writeTxnId != INIT_TXN_ID) {
+					} else if ((writeId != GC_WID_FALSE && writeId != GC_WID_TRUE) || writeTxnId != INIT_TXN_ID) {
 						// otherwise, it should be the GC read op
 						throw new InvalidHistoryError();
 					}
@@ -176,10 +182,103 @@ public class CobraHistoryLoader implements HistoryLoader<Long, CobraHistoryLoade
 		}
 	}
 
+	@Override
+	@SneakyThrows
+	public void dumpHistory(History<Long, CobraValue> history) {
+		if (!logDir.isDirectory()) {
+			throw new Error(String.format("%s is not a directory", logDir));
+		}
+		Arrays.stream(logDir.listFiles()).forEach(f -> f.delete());
+
+		for (var session : history.getSessions()) {
+			if (session.getId() == INIT_TXN_ID) {
+				continue;
+			}
+
+			try (var out = new DataOutputStream(new FileOutputStream(
+					logDir.toPath().resolve(String.format("T%d.log", session.getId())).toFile()))) {
+				for (var transaction : session.getTransactions()) {
+					out.writeByte('S');
+					out.writeLong(transaction.getId());
+
+					for (var event : transaction.getEvents()) {
+						switch (event.getType()) {
+						case WRITE: {
+							out.writeByte('W');
+							var value = event.getValue();
+							out.writeLong(value.getWriteId());
+							out.writeLong(event.getKey());
+							out.writeLong(value.getValue());
+							break;
+						}
+						case READ: {
+							out.writeByte('R');
+							var value = event.getValue();
+							out.writeLong(value.getTransactionId());
+							out.writeLong(value.getWriteId());
+							out.writeLong(event.getKey());
+							out.writeLong(value.getValue());
+							break;
+						}
+						}
+					}
+
+					out.writeByte('C');
+					out.writeLong(transaction.getId());
+				}
+			}
+		}
+	}
+
+	@Override
+	public History<Long, Long> toLongLongHistory(History<Long, CobraValue> history) {
+		var newHistory = new History<Long, Long>();
+		for (var session : history.getSessions()) {
+			var newSession = newHistory.addSession(session.getId());
+			for (var txn : session.getTransactions()) {
+				var newTxn = newHistory.addTransaction(newSession, txn.getId());
+				for (var ev : txn.getEvents()) {
+					newHistory.addEvent(newTxn, ev.getType(), ev.getKey(), ev.getValue().writeId);
+				}
+			}
+		}
+
+		return newHistory;
+	}
+
+	@Override
+	public History<Long, CobraValue> fromLongLongHistory(History<Long, Long> history) {
+		var newHistory = new History<Long, CobraValue>();
+		var writes = new HashMap<Pair<Long, Long>, Pair<Long, Long>>();
+
+		history.getEvents().stream().filter(ev -> ev.getType() == WRITE).forEach(new Consumer<Event<Long, Long>>() {
+			private long writeId = 0x10000000L;
+
+			@Override
+			public void accept(Event<Long, Long> ev) {
+				writes.put(Pair.of(ev.getKey(), ev.getValue()), Pair.of(writeId++, ev.getTransaction().getId()));
+			}
+		});
+
+		for (var session : history.getSessions()) {
+			var newSession = newHistory.addSession(session.getId());
+			for (var txn : session.getTransactions()) {
+				var newTxn = newHistory.addTransaction(newSession, txn.getId());
+				for (var ev : txn.getEvents()) {
+					var write = writes.get(Pair.of(ev.getKey(), ev.getValue()));
+					newHistory.addEvent(newTxn, ev.getType(), ev.getKey(),
+							new CobraValue(write.getLeft(), write.getRight(), ev.getValue()));
+				}
+			}
+		}
+
+		return newHistory;
+	}
+
 	@Data
 	public static class CobraValue {
 		private final long writeId;
 		private final long transactionId;
 		private final long value;
-	};
+	}
 }

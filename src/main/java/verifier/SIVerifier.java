@@ -17,6 +17,7 @@ import monosat.Lit;
 import monosat.Logic;
 import monosat.Solver;
 import org.apache.commons.lang3.tuple.Pair;
+import util.Profiler;
 
 @SuppressWarnings("UnstableApiUsage")
 public class SIVerifier<KeyType, ValueType> {
@@ -31,22 +32,37 @@ public class SIVerifier<KeyType, ValueType> {
 	}
 
 	public boolean audit() {
-		if (!verifyInternalConsistency(history)) {
+		var profiler = Profiler.getInstance();
+
+		profiler.startTick("ONESHOT_CONS");
+		profiler.startTick("SI_VERIFY_INT");
+		boolean satisfy_int = verifyInternalConsistency(history);
+		profiler.endTick("SI_VERIFY_INT");
+		if (!satisfy_int) {
 			return false;
 		}
 
+		profiler.startTick("SI_GEN_PREC_GRAPH");
 		var graph = new PrecedenceGraph2<>(history);
+		profiler.endTick("SI_GEN_PREC_GRAPH");
 		System.err.printf("WR edges count: %d\nSO edges count: %d\n",
 			graph.getReadFrom().edges().stream()
 				.map(e -> graph.getReadFrom().edgeValue(e).get().size())
 				.reduce(Integer::sum).get(),
 			graph.getSessionOrder().edges().size());
 
+		profiler.startTick("SI_GEN_CONSTRAINTS");
 		var constraints = generateConstraints(history, graph);
+		profiler.endTick("SI_GEN_CONSTRAINTS");
 		System.err.printf("Constraints count: %d\n\n", constraints.size());
 
 		var solver = new SISolver<>(history, graph, constraints);
+		profiler.endTick("ONESHOT_CONS");
+
+		profiler.startTick("ONESHOT_SOLVE");
 		boolean accepted = solver.solve();
+		profiler.endTick("ONESHOT_SOLVE");
+
 		if (!accepted) {
 			var conflicts = solver.getConflicts();
 			System.err.println("Conflicts:");
@@ -223,7 +239,9 @@ class SISolver<KeyType, ValueType> {
 	SISolver(History<KeyType, ValueType> history,
 			 PrecedenceGraph2<KeyType, ValueType> precedenceGraph,
 			 Set<SIConstraint<KeyType, ValueType>> constraints) {
+		var profiler = Profiler.getInstance();
 
+		profiler.startTick("SI_SOLVER_GEN_GRAPH_A_B");
 		var monoGraph = new monosat.Graph(solver);
 		var nodeMap = new HashMap<Transaction<KeyType, ValueType>, Integer>();
 		var graphA = createWRAndSOGraph(history, precedenceGraph);
@@ -234,7 +252,25 @@ class SISolver<KeyType, ValueType> {
 		});
 
 		addConstraints(constraints, graphA, graphB);
+		profiler.endTick("SI_SOLVER_GEN_GRAPH_A_B");
+
+		profiler.startTick("SI_SOLVER_GEN_GRAPH_C");
 		var graphC = composition(history, graphA, graphB);
+		profiler.endTick("SI_SOLVER_GEN_GRAPH_C");
+
+		List.of(
+			Pair.of('A', graphA),
+			Pair.of('B', graphB),
+			Pair.of('C', graphC))
+			.forEach(p -> {
+				var g = p.getRight();
+				var edgesSize = g.edges().stream()
+					.map(e -> g.edgeValue(e).get().size())
+					.reduce(Integer::sum).get();
+				System.err.printf("Graph %s edges count: %d\n",
+						p.getLeft(),
+						edgesSize);
+			});
 
 		var addGraph = ((Consumer<ValueGraph<Transaction<KeyType, ValueType>, Set<Lit>>>) g -> {
 			for (var n : g.nodes()) {
@@ -246,8 +282,10 @@ class SISolver<KeyType, ValueType> {
 			}
 		});
 
+		profiler.startTick("SI_SOLVER_GEN_MONO_GRAPH");
 		addGraph.accept(graphA);
 		addGraph.accept(graphC);
+		profiler.endTick("SI_SOLVER_GEN_MONO_GRAPH");
 
 		solver.assertTrue(monoGraph.acyclic());
 	}

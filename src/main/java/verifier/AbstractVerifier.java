@@ -328,6 +328,7 @@ public abstract class AbstractVerifier {
 							ChengLogger.println(LoggerType.ERROR, "    " + tmp.toString());
 						}
 						assert false;
+						continue;
 					}
 
 					if (veri!=null && veri.deleted_txnids.contains(dependent_txnid)) {

@@ -3,15 +3,19 @@ import java.util.concurrent.Callable;
 
 import graph.CobraHistoryLoader;
 import graph.DBCopHistoryLoader;
+import graph.HistoryDumper;
 import graph.HistoryLoader;
+import graph.HistoryParser;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 import util.Profiler;
+import util.UnimplementedError;
 import verifier.SIVerifier;
 
-@Command(name = "verifier", mixinStandardHelpOptions = true, version = "verifier 0.0.1", subcommands = { Audit.class, Cobra.class })
+@Command(name = "verifier", mixinStandardHelpOptions = true, version = "verifier 0.0.1", subcommands = { Audit.class,
+		Cobra.class, Convert.class })
 public class Main implements Callable<Integer> {
 	public static void main(String[] args) {
 		var cmd = new CommandLine(new Main());
@@ -65,22 +69,18 @@ class Audit implements Callable<Integer> {
 		profiler.startTick("ENTIRE_EXPERIMENT");
 		var pass = true;
 		try {
-			profiler.startTick("ONESHOT_CONS");
 			var verifier = new SIVerifier<>(loader);
-			profiler.endTick("ONESHOT_CONS");
 
-			profiler.startTick("ONESHOT_SOLVE");
 			pass = verifier.audit();
-			profiler.endTick("ONESHOT_SOLVE");
 		} catch (Throwable e) {
 			pass = false;
 			e.printStackTrace();
 		}
 
 		profiler.endTick("ENTIRE_EXPERIMENT");
-		System.err.printf(">>> Overall runtime = %dms\n  construct: %dms\n  solve: %dms\n",
-				profiler.getTime("ENTIRE_EXPERIMENT"), profiler.getTime("ONESHOT_CONS"),
-				profiler.getTime("ONESHOT_SOLVE"));
+		for (var p : profiler.getDurations()) {
+			System.err.printf("%s: %dms\n", p.getKey(), p.getValue());
+		}
 
 		if (pass) {
 			System.err.println("[[[[ ACCEPT ]]]]");
@@ -90,8 +90,59 @@ class Audit implements Callable<Integer> {
 			return -1;
 		}
 	}
+}
 
-	enum HistoryType {
-		COBRA, DBCOP
+@Command(name = "convert", mixinStandardHelpOptions = true)
+class Convert implements Callable<Integer> {
+	@Option(names = { "-f", "--from" }, description = "input history type: ${COMPLETION-CANDIDATES}")
+	private HistoryType inType = HistoryType.COBRA;
+
+	@Option(names = { "-o", "--output" }, description = "input history type: ${COMPLETION-CANDIDATES}")
+	private HistoryType outType = HistoryType.DBCOP;
+
+	@Parameters(description = "input history path", index = "0")
+	private Path inPath;
+
+	@Parameters(description = "output history path", index = "1")
+	private Path outPath;
+
+	@Override
+	public Integer call() {
+		HistoryParser in;
+		HistoryParser out;
+
+		switch (inType) {
+		case COBRA:
+			in = new CobraHistoryLoader(inPath);
+			break;
+		case DBCOP:
+			in = new DBCopHistoryLoader(inPath);
+			break;
+		default:
+			throw new UnimplementedError();
+		}
+
+		switch (outType) {
+		case COBRA:
+			out = new CobraHistoryLoader(outPath);
+			break;
+		case DBCOP:
+			out = new DBCopHistoryLoader(outPath);
+			break;
+		default:
+			throw new UnimplementedError();
+		}
+
+		var oldHistory = in.loadHistory();
+		var internalHistory = in.toLongLongHistory(oldHistory);
+		var newHistory = out.fromLongLongHistory(internalHistory);
+		out.dumpHistory(newHistory);
+
+		return 0;
 	}
+
+}
+
+enum HistoryType {
+	COBRA, DBCOP
 }

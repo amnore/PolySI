@@ -3,15 +3,22 @@ package graph;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import com.google.common.io.LittleEndianDataInputStream;
+import com.google.common.io.LittleEndianDataOutputStream;
 
 import graph.History.Session;
+import graph.History.Transaction;
+import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.tuple.Triple;
 import util.UnimplementedError;
@@ -20,95 +27,166 @@ import static graph.History.EventType.READ;
 import static graph.History.EventType.WRITE;
 
 @SuppressWarnings("UnstableApiUsage")
-public class DBCopHistoryLoader implements HistoryLoader<Long, Long> {
+public class DBCopHistoryLoader implements HistoryParser<Long, Long> {
 	private final File logFile;
-	private History<Long, Long> history;
-	private Set<Long> keys;
-	private long sessionId = 1;
-	private long transactionId = 1;
+
+	private static final long INIT_SESSION_ID = 0;
+	private static final long INIT_TXN_ID = 0;
 
 	public DBCopHistoryLoader(Path logPath) {
 		logFile = logPath.toFile();
-
-		if (!logFile.isFile()) {
-			throw new Error("file does not exist");
-		}
 	}
 
 	@Override
 	@SneakyThrows
 	public History<Long, Long> loadHistory() {
-		if (history != null) {
+		var in = new LittleEndianDataInputStream(new FileInputStream(logFile));
+		return (new InternalLoader(in)).load();
+	}
+
+	@Override
+	@SneakyThrows
+	public void dumpHistory(History<Long, Long> history) {
+		var out = new LittleEndianDataOutputStream(new FileOutputStream(logFile));
+		(new InternalDumper(history, out)).dump();
+	}
+
+	@RequiredArgsConstructor
+	private static class InternalLoader {
+		private final History<Long, Long> history = new History<>();
+		private final Set<Long> keys = new HashSet<>();
+		private long sessionId = 1;
+		private long transactionId = 1;
+		private final LittleEndianDataInputStream in;
+
+		@SneakyThrows
+		History<Long, Long> load() {
+			parseHistory();
+
+			var init = history.addTransaction(history.addSession(0), 0);
+			for (var k : keys) {
+				history.addEvent(init, WRITE, k, 0L);
+			}
+
 			return history;
 		}
 
-		history = new History<>();
-		keys = new HashSet<>();
-		try (var in = new LittleEndianDataInputStream(new FileInputStream(logFile))) {
-			parseHistory(in);
-		}
+		@SneakyThrows
+		private void parseHistory() {
+			var id = in.readLong();
+			var nodeNum = in.readLong();
+			var variableNum = in.readLong();
+			var transactionNum = in.readLong();
+			var eventNum = in.readLong();
+			var info = parseString();
+			var start = parseString();
+			var end = parseString();
 
-		var init = history.addTransaction(history.addSession(0), 0);
-		for (var k: keys) {
-			history.addEvent(init, WRITE, k, 0L);
-		}
-
-		return history;
-	}
-
-	@SneakyThrows
-	private void parseHistory(LittleEndianDataInputStream in) {
-		var id = in.readLong();
-		var nodeNum = in.readLong();
-		var variableNum = in.readLong();
-		var transactionNum = in.readLong();
-		var eventNum = in.readLong();
-		var info = parseString(in);
-		var start = parseString(in);
-		var end = parseString(in);
-
-		var length = in.readLong();
-		for (long i = 0; i < length; i++) {
-			parseSession(in);
-		}
-	}
-
-	@SneakyThrows
-	private String parseString(LittleEndianDataInputStream in) {
-		var size = in.readLong();
-		assert size <= Integer.MAX_VALUE;
-		return new String(in.readNBytes((int) size), StandardCharsets.UTF_8);
-	}
-
-	@SneakyThrows
-	void parseSession(LittleEndianDataInputStream in) {
-		var length = in.readLong();
-		var session = history.addSession(sessionId++);
-		for (long i = 0; i < length; i++) {
-			parseTransaction(session, in);
-		}
-	}
-
-	@SneakyThrows
-	void parseTransaction(Session<Long, Long> session, LittleEndianDataInputStream in) {
-		var length = in.readLong();
-		var events = new ArrayList<Triple<History.EventType, Long, Long>>();
-		for (long i = 0; i < length; i++) {
-			var write = in.readBoolean();
-			var key = in.readLong();
-			var value = in.readLong();
-			var success = in.readBoolean();
-
-			if (success) {
-				keys.add(key);
-				events.add(Triple.of(write ? WRITE: READ, key, value));
+			var length = in.readLong();
+			for (long i = 0; i < length; i++) {
+				parseSession();
 			}
 		}
 
-		var success = in.readBoolean();
-		if (success) {
-			var txn = history.addTransaction(session, transactionId++);
-			events.forEach(t -> history.addEvent(txn, t.getLeft(), t.getMiddle(), t.getRight()));
+		@SneakyThrows
+		private String parseString() {
+			var size = in.readLong();
+			assert size <= Integer.MAX_VALUE;
+			return new String(in.readNBytes((int) size), StandardCharsets.UTF_8);
 		}
+
+		@SneakyThrows
+		void parseSession() {
+			var length = in.readLong();
+			var session = history.addSession(sessionId++);
+			for (long i = 0; i < length; i++) {
+				parseTransaction(session);
+			}
+		}
+
+		@SneakyThrows
+		void parseTransaction(Session<Long, Long> session) {
+			var length = in.readLong();
+			var events = new ArrayList<Triple<History.EventType, Long, Long>>();
+			for (long i = 0; i < length; i++) {
+				var write = in.readBoolean();
+				var key = in.readLong();
+				var value = in.readLong();
+				var success = in.readBoolean();
+
+				if (success) {
+					keys.add(key);
+					events.add(Triple.of(write ? WRITE : READ, key, value));
+				}
+			}
+
+			var success = in.readBoolean();
+			if (success) {
+				var txn = history.addTransaction(session, transactionId++);
+				events.forEach(t -> history.addEvent(txn, t.getLeft(), t.getMiddle(), t.getRight()));
+			}
+		}
+	}
+
+	@RequiredArgsConstructor
+	private static class InternalDumper {
+		private final History<Long, Long> history;
+		private final LittleEndianDataOutputStream out;
+
+		@SneakyThrows
+		void dump() {
+			out.writeLong(0); // id
+			out.writeLong(history.getSessions().size()); // nodeNum
+			out.writeLong(history.getEvents().stream().map(ev -> ev.getKey()).collect(Collectors.toSet()).size()); // variableNum
+			out.writeLong(history.getTransactions().size()); // transactionNum
+			out.writeLong(history.getEvents().size()); // eventNum
+			dumpString("generated by SIVerifier"); // info
+			var d = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX").format(new Date());
+			dumpString(d); // start
+			dumpString(d); // end
+
+			out.writeLong(history.getSessions().size());
+			for (var s : history.getSessions()) {
+				dumpSession(s);
+			}
+		}
+
+		@SneakyThrows
+		void dumpSession(Session<Long, Long> session) {
+			out.writeLong(session.getTransactions().size());
+			for (var txn : session.getTransactions()) {
+				dumpTransaction(txn);
+			}
+		}
+
+		@SneakyThrows
+		void dumpTransaction(Transaction<Long, Long> transaction) {
+			out.writeLong(transaction.getEvents().size());
+			for (var ev : transaction.getEvents()) {
+				out.writeBoolean(ev.getType() == WRITE);
+				out.writeLong(ev.getKey());
+				out.writeLong(ev.getValue());
+				out.writeBoolean(true); // success
+			}
+
+			out.writeBoolean(true); // success
+		}
+
+		@SneakyThrows
+		void dumpString(String str) {
+			var bytes = str.getBytes(StandardCharsets.UTF_8);
+			out.writeLong(bytes.length);
+			out.write(bytes);
+		}
+	}
+
+	@Override
+	public History<Long, Long> toLongLongHistory(History<Long, Long> history) {
+		return history;
+	}
+
+	@Override
+	public History<Long, Long> fromLongLongHistory(History<Long, Long> history) {
+		return history;
 	}
 }
