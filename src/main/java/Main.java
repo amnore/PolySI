@@ -15,7 +15,7 @@ import util.UnimplementedError;
 import verifier.SIVerifier;
 
 @Command(name = "verifier", mixinStandardHelpOptions = true, version = "verifier 0.0.1", subcommands = { Audit.class,
-		Convert.class })
+		Convert.class, Stat.class })
 public class Main implements Callable<Integer> {
 	public static void main(String[] args) {
 		var cmd = new CommandLine(new Main());
@@ -42,17 +42,7 @@ class Audit implements Callable<Integer> {
 
 	@Override
 	public Integer call() {
-		HistoryLoader<?, ?> loader;
-		switch (type) {
-		case COBRA:
-			loader = new CobraHistoryLoader(path);
-			break;
-		case DBCOP:
-			loader = new DBCopHistoryLoader(path);
-			break;
-		default:
-			throw new Error();
-		}
+		var loader = Utils.getParser(type, path);
 
 		profiler.startTick("ENTIRE_EXPERIMENT");
 		var pass = true;
@@ -96,30 +86,8 @@ class Convert implements Callable<Integer> {
 
 	@Override
 	public Integer call() {
-		HistoryParser<?, ?> in;
-		HistoryParser<?, ?> out;
-
-		switch (inType) {
-		case COBRA:
-			in = new CobraHistoryLoader(inPath);
-			break;
-		case DBCOP:
-			in = new DBCopHistoryLoader(inPath);
-			break;
-		default:
-			throw new UnimplementedError();
-		}
-
-		switch (outType) {
-		case COBRA:
-			out = new CobraHistoryLoader(outPath);
-			break;
-		case DBCOP:
-			out = new DBCopHistoryLoader(outPath);
-			break;
-		default:
-			throw new UnimplementedError();
-		}
+		var in = Utils.getParser(inType, inPath);
+		var out = Utils.getParser(outType, outPath);
 
 		var oldHistory = in.loadHistory();
 		convertAndDump(out, oldHistory);
@@ -129,6 +97,47 @@ class Convert implements Callable<Integer> {
 
 	private <T, U> void convertAndDump(HistoryParser<T, U> parser, History<?, ?> history) {
 		parser.dumpHistory(parser.convertFrom(history));
+	}
+}
+
+@Command(name = "stat", mixinStandardHelpOptions = true)
+class Stat implements Callable<Integer> {
+	@Option(names = { "-t", "--type" }, description = "history type: ${COMPLETION-CANDIDATES}")
+	private final HistoryType type = HistoryType.COBRA;
+
+	@Parameters(description = "history path")
+	private Path path;
+
+	@Override
+	public Integer call() {
+		var loader = Utils.getParser(type, path);
+		var history = loader.loadHistory();
+
+		var events = history.getEvents();
+		System.out.printf("Sessions: %d\n" +
+				"Transactions: %d\n" +
+				"Events: total %d, read %d, write %d\n",
+			history.getSessions().size(),
+			history.getTransactions().size(),
+			events.size(),
+			events.stream().filter(e -> e.getType() == History.EventType.READ).count(),
+			events.stream().filter(e -> e.getType() == History.EventType.WRITE).count());
+
+		return 0;
+	}
+}
+
+class Utils {
+	static HistoryParser<?, ?> getParser(HistoryType type, Path path) {
+		switch (type) {
+			case COBRA:
+				return new CobraHistoryLoader(path);
+			case DBCOP:
+				return new DBCopHistoryLoader(path);
+			default:
+				throw new UnimplementedError();
+		}
+
 	}
 }
 
