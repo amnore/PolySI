@@ -116,12 +116,14 @@ class Stat implements Callable<Integer> {
 		var events = history.getEvents();
 		System.out.printf("Sessions: %d\n" +
 				"Transactions: %d\n" +
-				"Events: total %d, read %d, write %d\n",
+				"Events: total %d, read %d, write %d\n" +
+				"Variables: %d\n",
 			history.getSessions().size(),
 			history.getTransactions().size(),
 			events.size(),
 			events.stream().filter(e -> e.getType() == History.EventType.READ).count(),
-			events.stream().filter(e -> e.getType() == History.EventType.WRITE).count());
+			events.stream().filter(e -> e.getType() == History.EventType.WRITE).count(),
+			events.stream().map(e -> e.getKey()).distinct().count());
 
 		return 0;
 	}

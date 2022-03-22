@@ -32,15 +32,20 @@ class Utils {
 			Function<Event<V, W>, Pair<T, U>> keyValueConvert, Predicate<Event<V, W>> filter) {
 		var sessions = history.getSessions();
 
-		return new History<T, U>(sessions.stream().map(s -> s.getId()).collect(Collectors.toSet()),
-				sessions.stream()
-						.map(s -> Pair.of(s.getId(),
-								s.getTransactions().stream().map(t -> t.getId()).collect(Collectors.toList())))
-						.collect(Collectors.toMap(Pair::getLeft, Pair::getRight)),
-				history.getTransactions().stream()
-						.map(t -> Pair.of(t.getId(), t.getEvents().stream().filter(filter).map(ev -> {
-							var kv = keyValueConvert.apply(ev);
-							return Triple.of(ev.getType(), kv.getLeft(), kv.getRight());
-						}).collect(Collectors.toList()))).collect(Collectors.toMap(Pair::getLeft, Pair::getRight)));
+		return new History<T, U>(
+			sessions.stream().map(s -> s.getId()).collect(Collectors.toSet()),
+			sessions.stream()
+				.map(s -> Pair.of(s.getId(),
+					s.getTransactions().stream()
+						.map(t -> t.getId()).collect(Collectors.toList())))
+				.collect(Collectors.toMap(Pair::getLeft, Pair::getRight)),
+			history.getTransactions().stream()
+				.map(t -> Pair.of(
+					t.getId(),
+					t.getEvents().stream().filter(filter).map(ev -> {
+						var kv = keyValueConvert.apply(ev);
+						return Triple.of(ev.getType(), kv.getLeft(), kv.getRight());
+					}).collect(Collectors.toList())))
+				.collect(Collectors.toMap(Pair::getLeft, Pair::getRight)));
 	}
 }
