@@ -119,6 +119,10 @@ public class MatrixGraph<T> implements Graph<T> {
 
 	private MatrixGraph<T> floyd() {
 		var result = new MatrixGraph<>(this);
+		for (var i = 0; i < adjacency.length; i++) {
+			result.adjacency[i][i] = true;
+		}
+
 		for (var k = 0; k < adjacency.length; k++) {
 			for (var i = 0; i < adjacency.length; i++) {
 				for (var j = 0; j < adjacency.length; j++) {
@@ -135,18 +139,19 @@ public class MatrixGraph<T> implements Graph<T> {
 		var graph = toSparseGraph();
 		for (var i = 0; i < adjacency.length; i++) {
 			var q = new ArrayDeque<Integer>();
-			var vis = result.adjacency[i];
+			var reachable = result.adjacency[i];
 
 			q.add(i);
+			reachable[i] = true;
 			while (!q.isEmpty()) {
 				var j = q.pop();
 
 				for (var k: graph.successors(j)) {
-					if (vis[k]) {
+					if (reachable[k]) {
 						continue;
 					}
 
-					vis[k] = true;
+					reachable[k] = true;
 					q.push(k);
 				}
 			}
