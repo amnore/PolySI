@@ -187,6 +187,7 @@ public class SIVerifier<KeyType, ValueType> {
               case WW:
                 if (reachability.hasEdgeConnecting(e.getTo(), e.getFrom())) {
                   hasConflict = true;
+				  System.err.printf("conflict edge: %s\n", e);
                   break outer;
                 }
                 break;
@@ -195,6 +196,7 @@ public class SIVerifier<KeyType, ValueType> {
                      knownGraph.getKnownGraphA().predecessors(e.getFrom())) {
                   if (reachability.hasEdgeConnecting(e.getTo(), n)) {
                     hasConflict = true;
+					  System.err.printf("conflict edge: %s\n", e);
                     break outer;
                   }
                 }
