@@ -161,17 +161,18 @@ public class MatrixGraph<T> implements Graph<T> {
 	}
 
 	public MatrixGraph<T> reachability() {
-		var result = allNodesBfs();
+		return floyd().print();
+	}
 
+	private MatrixGraph<T> print() {
 		System.err.println();
 		for (int i = 0; i < adjacency.length; i++) {
 			for (int j = 0; j < adjacency.length; j++) {
-				System.err.printf("%d ", result.adjacency[i][j] ? 1 : 0);
+				System.err.printf("%d ", adjacency[i][j] ? 1 : 0);
 			}
 			System.err.println();
 		}
-
-		return result;
+		return this;
 	}
 
 	private MatrixGraph<T> matrixProduct(MatrixGraph<T> other) {
@@ -207,7 +208,7 @@ public class MatrixGraph<T> implements Graph<T> {
 	}
 
 	public MatrixGraph<T> composition(MatrixGraph<T> other) {
-		return sparseComposition(other);
+		return print().matrixProduct(other.print()).print();
 	}
 
 	public MatrixGraph<T> union(MatrixGraph<T> other) {
