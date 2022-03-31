@@ -11,32 +11,34 @@ import com.google.common.graph.Graph;
 import com.google.common.graph.GraphBuilder;
 import com.google.common.graph.MutableGraph;
 
+import org.apache.commons.lang3.tuple.Pair;
+
 import util.UnimplementedError;
 
 public class MatrixGraph<T> implements Graph<T> {
 	private final BiMap<T, Integer> nodeMap = HashBiMap.create();
-	private final boolean adjacency[][];
+	private final byte adjacency[][];
 
-	public MatrixGraph(Graph<T> graph) {
+	public MatrixGraph(Graph<T> graph, boolean isRWEdge) {
 		int i = 0;
 		for (var n : graph.nodes()) {
 			nodeMap.put(n, i++);
 		}
 
-		adjacency = new boolean[i][i];
+		adjacency = new byte[i][i];
 		for (var e : graph.edges()) {
-			adjacency[nodeMap.get(e.source())][nodeMap.get(e.target())] = true;
+			adjacency[nodeMap.get(e.source())][nodeMap.get(e.target())] = (byte) (1 | (isRWEdge ? 0 : 2));
 		}
 	}
 
 	private MatrixGraph(BiMap<T, Integer> nodes) {
 		nodeMap.putAll(nodes);
-		adjacency = new boolean[nodes.size()][nodes.size()];
+		adjacency = new byte[nodes.size()][nodes.size()];
 	}
 
 	private MatrixGraph(MatrixGraph<T> graph) {
 		nodeMap.putAll(graph.nodeMap);
-		adjacency = new boolean[graph.adjacency.length][];
+		adjacency = new byte[graph.adjacency.length][];
 		for (var i = 0; i < adjacency.length; i++) {
 			adjacency[i] = graph.adjacency[i].clone();
 		}
@@ -109,7 +111,7 @@ public class MatrixGraph<T> implements Graph<T> {
 
 	@Override
 	public boolean hasEdgeConnecting(T nodeU, T nodeV) {
-		return adjacency[nodeMap.get(nodeU)][nodeMap.get(nodeV)];
+		return (adjacency[nodeMap.get(nodeU)][nodeMap.get(nodeV)] & 1) != 0;
 	}
 
 	@Override
@@ -117,12 +119,22 @@ public class MatrixGraph<T> implements Graph<T> {
 		return hasEdgeConnecting(endpoints.source(), endpoints.target());
 	}
 
+	public boolean hasNonRWEdgeConnecting(T nodeU, T nodeV) {
+		return adjacency[nodeMap.get(nodeU)][nodeMap.get(nodeV)] == 3;
+	}
+
+	private static int concatEdge(int edge1, int edge2) {
+		var has_edge = edge1 & edge2 & 1;
+		var has_non_rw_edge = (edge2 & 2 & (has_edge << 1));
+		return has_edge | has_non_rw_edge;
+	}
+
 	private MatrixGraph<T> floyd() {
 		var result = new MatrixGraph<>(this);
 		for (var k = 0; k < adjacency.length; k++) {
 			for (var i = 0; i < adjacency.length; i++) {
 				for (var j = 0; j < adjacency.length; j++) {
-					result.adjacency[i][j] |= result.adjacency[i][k] & result.adjacency[k][j];
+					result.adjacency[i][j] |= concatEdge(result.adjacency[i][k], result.adjacency[k][j]);
 				}
 			}
 		}
@@ -141,13 +153,13 @@ public class MatrixGraph<T> implements Graph<T> {
 			while (!q.isEmpty()) {
 				var j = q.pop();
 
-				for (var k: graph.successors(j)) {
-					if (vis[k]) {
-						continue;
-					}
+				for (var k : graph.successors(j)) {
+					var isNew = (vis[k] & 1) == 0;
+					vis[k] |= concatEdge(1, adjacency[j][k]);
 
-					vis[k] = true;
-					q.push(k);
+					if (isNew) {
+						q.push(k);
+					}
 				}
 			}
 		}
@@ -166,7 +178,7 @@ public class MatrixGraph<T> implements Graph<T> {
 		for (var i = 0; i < adjacency.length; i++) {
 			for (var j = 0; j < adjacency.length; j++) {
 				for (var k = 0; k < adjacency.length; k++) {
-					result.adjacency[i][k] |= adjacency[i][j] & other.adjacency[j][k];
+					result.adjacency[i][k] |= concatEdge(adjacency[i][j], other.adjacency[j][k]);
 				}
 			}
 		}
@@ -183,7 +195,7 @@ public class MatrixGraph<T> implements Graph<T> {
 		for (var i = 0; i < adjacency.length; i++) {
 			for (var j : a.predecessors(i)) {
 				for (var k : b.successors(i)) {
-					result.adjacency[j][k] = true;
+					result.adjacency[j][k] |= concatEdge(adjacency[j][i], other.adjacency[i][k]);
 				}
 			}
 		}
@@ -201,7 +213,7 @@ public class MatrixGraph<T> implements Graph<T> {
 		var result = new MatrixGraph<>(nodeMap);
 		for (var i = 0; i < adjacency.length; i++) {
 			for (var j = 0; j < adjacency.length; j++) {
-				result.adjacency[i][j] = adjacency[i][j] | other.adjacency[i][j];
+				result.adjacency[i][j] = (byte) (adjacency[i][j] | other.adjacency[i][j]);
 			}
 		}
 
@@ -215,7 +227,7 @@ public class MatrixGraph<T> implements Graph<T> {
 		}
 		for (int i = 0; i < adjacency.length; i++) {
 			for (int j = 0; j < adjacency.length; j++) {
-				if (adjacency[i][j]) {
+				if ((adjacency[i][j] & 1) != 0) {
 					graph.putEdge(i, j);
 				}
 			}
