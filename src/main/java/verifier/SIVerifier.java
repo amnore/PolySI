@@ -169,6 +169,7 @@ public class SIVerifier<KeyType, ValueType> {
 					});
 
 					if (hasInverseEdge.apply(e)) {
+						System.err.printf("conflict edge: %s\n", e);
 						hasConflict = true;
 						break;
 					}
