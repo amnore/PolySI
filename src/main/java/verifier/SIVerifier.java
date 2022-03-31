@@ -195,6 +195,7 @@ public class SIVerifier<KeyType, ValueType> {
 			}
 		}
 
+		System.err.printf("solved constraints: %s\n", solvedConstraints);
 		constraints.removeAll(solvedConstraints);
 		return solvedConstraints.size();
 	}
