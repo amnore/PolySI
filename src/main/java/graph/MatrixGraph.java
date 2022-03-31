@@ -173,7 +173,17 @@ public class MatrixGraph<T> implements Graph<T> {
 	}
 
 	public MatrixGraph<T> reachability() {
-		return allNodesBfs();
+		var result = allNodesBfs();
+
+		System.err.println();
+		for (int i = 0; i < adjacency.length; i++) {
+			for (int j = 0; j < adjacency.length; j++) {
+				System.err.printf("%d ", result.adjacency[i][j] & 1);
+			}
+			System.err.println();
+		}
+
+		return result;
 	}
 
 	private MatrixGraph<T> matrixProduct(MatrixGraph<T> other) {
