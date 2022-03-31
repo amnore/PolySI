@@ -4,6 +4,7 @@ import java.util.concurrent.Callable;
 import history.History;
 import history.HistoryLoader;
 import history.HistoryParser;
+import history.History.EventType;
 import history.loaders.CobraHistoryLoader;
 import history.loaders.DBCopHistoryLoader;
 import picocli.CommandLine;
@@ -15,7 +16,7 @@ import util.UnimplementedError;
 import verifier.SIVerifier;
 
 @Command(name = "verifier", mixinStandardHelpOptions = true, version = "verifier 0.0.1", subcommands = { Audit.class,
-		Convert.class, Stat.class })
+		Convert.class, Stat.class, Dump.class })
 public class Main implements Callable<Integer> {
 	public static void main(String[] args) {
 		var cmd = new CommandLine(new Main());
@@ -114,30 +115,56 @@ class Stat implements Callable<Integer> {
 		var history = loader.loadHistory();
 
 		var events = history.getEvents();
-		System.out.printf("Sessions: %d\n" +
-				"Transactions: %d\n" +
-				"Events: total %d, read %d, write %d\n" +
-				"Variables: %d\n",
-			history.getSessions().size(),
-			history.getTransactions().size(),
-			events.size(),
-			events.stream().filter(e -> e.getType() == History.EventType.READ).count(),
-			events.stream().filter(e -> e.getType() == History.EventType.WRITE).count(),
-			events.stream().map(e -> e.getKey()).distinct().count());
+		System.out.printf(
+				"Sessions: %d\n" + "Transactions: %d\n" + "Events: total %d, read %d, write %d\n" + "Variables: %d\n",
+				history.getSessions().size(), history.getTransactions().size(), events.size(),
+				events.stream().filter(e -> e.getType() == History.EventType.READ).count(),
+				events.stream().filter(e -> e.getType() == History.EventType.WRITE).count(),
+				events.stream().map(e -> e.getKey()).distinct().count());
 
 		return 0;
 	}
 }
 
+@Command(name = "dump", mixinStandardHelpOptions = true)
+class Dump implements Callable<Integer> {
+	@Option(names = { "-t", "--type" }, description = "history type: ${COMPLETION-CANDIDATES}")
+	private final HistoryType type = HistoryType.COBRA;
+
+	@Parameters(description = "history path")
+	private Path path;
+
+	@Override
+	public Integer call() {
+		var loader = Utils.getParser(type, path);
+		var history = loader.loadHistory();
+
+		for (var session : history.getSessions()) {
+			var txns = session.getTransactions();
+			for (var i = 0; i < txns.size(); i++) {
+				var events = txns.get(i).getEvents();
+				for (var j = 0; j < events.size(); j++) {
+					var ev = events.get(j);
+					System.out.printf("%c(%s, %s, %d, %d, %d)\n", ev.getType() == EventType.WRITE ? 'W' : 'R',
+							ev.getKey(), ev.getValue(), session.getId(), i, j);
+				}
+			}
+		}
+
+		return 0;
+	}
+
+}
+
 class Utils {
 	static HistoryParser<?, ?> getParser(HistoryType type, Path path) {
 		switch (type) {
-			case COBRA:
-				return new CobraHistoryLoader(path);
-			case DBCOP:
-				return new DBCopHistoryLoader(path);
-			default:
-				throw new UnimplementedError();
+		case COBRA:
+			return new CobraHistoryLoader(path);
+		case DBCOP:
+			return new DBCopHistoryLoader(path);
+		default:
+			throw new UnimplementedError();
 		}
 
 	}

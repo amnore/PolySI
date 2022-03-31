@@ -21,8 +21,9 @@ import history.History.Transaction;
 
 @SuppressWarnings("UnstableApiUsage")
 public class PrecedenceGraph<KeyType, ValueType> {
-	private final MutableGraph<Transaction<KeyType, ValueType>> sessionOrderGraph = GraphBuilder.directed().build();
 	private final MutableValueGraph<Transaction<KeyType, ValueType>, Set<KeyType>> readFromGraph = ValueGraphBuilder.directed().build();
+	private final MutableGraph<Transaction<KeyType, ValueType>> knownGraphA = GraphBuilder.directed().build();
+	private final MutableGraph<Transaction<KeyType, ValueType>> knownGraphB = GraphBuilder.directed().build();
 
 	/**
 	 * Build a graph from a history
@@ -31,7 +32,8 @@ public class PrecedenceGraph<KeyType, ValueType> {
 	 */
 	public PrecedenceGraph(History<KeyType, ValueType> history) {
 		history.getTransactions().forEach(txn -> {
-			sessionOrderGraph.addNode(txn);
+			knownGraphA.addNode(txn);
+			knownGraphB.addNode(txn);
 			readFromGraph.addNode(txn);
 		});
 
@@ -40,7 +42,7 @@ public class PrecedenceGraph<KeyType, ValueType> {
 			Transaction<KeyType, ValueType> prevTxn = null;
 			for (var txn : session.getTransactions()) {
 				if (prevTxn != null) {
-					sessionOrderGraph.putEdge(prevTxn, txn);
+					knownGraphA.putEdge(prevTxn, txn);
 				}
 				prevTxn = txn;
 			}
@@ -63,14 +65,27 @@ public class PrecedenceGraph<KeyType, ValueType> {
 				readFromGraph.putEdgeValue(writeTxn, txn, new HashSet<>());
 			}
 			readFromGraph.edgeValue(writeTxn, txn).get().add(ev.getKey());
+			knownGraphA.putEdge(writeTxn, txn);
 		});
-	}
-
-	public Graph<Transaction<KeyType, ValueType>> getSessionOrder() {
-		return sessionOrderGraph;
 	}
 
 	public ValueGraph<Transaction<KeyType, ValueType>, Set<KeyType>> getReadFrom() {
 		return readFromGraph;
+	}
+
+	public Graph<Transaction<KeyType, ValueType>> getKnownGraphA() {
+		return knownGraphA;
+	}
+
+	public Graph<Transaction<KeyType, ValueType>> getKnownGraphB() {
+		return knownGraphB;
+	}
+
+	public void putEdgeToGraphA(Transaction<KeyType, ValueType> u, Transaction<KeyType, ValueType> v) {
+		knownGraphA.putEdge(u, v);
+	}
+
+	public void putEdgeToGraphB(Transaction<KeyType, ValueType> u, Transaction<KeyType, ValueType> v) {
+		knownGraphB.putEdge(u, v);
 	}
 }
