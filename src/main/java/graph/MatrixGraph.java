@@ -125,14 +125,14 @@ public class MatrixGraph<T> implements Graph<T> {
 
 	private static int concatEdge(int edge1, int edge2) {
 		var has_edge = edge1 & edge2 & 1;
-		var has_non_rw_edge = (edge2 & 2 & (has_edge << 1));
+		var has_non_rw_edge = (edge2 & 2 & (edge1 << 1));
 		return has_edge | has_non_rw_edge;
 	}
 
 	private MatrixGraph<T> floyd() {
 		var result = new MatrixGraph<>(this);
 		for (var i = 0; i < adjacency.length; i++) {
-			result.adjacency[i][i] = 3;
+			result.adjacency[i][i] = 1;
 		}
 
 		for (var k = 0; k < adjacency.length; k++) {
