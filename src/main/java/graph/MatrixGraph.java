@@ -146,7 +146,7 @@ public class MatrixGraph<T> implements Graph<T> {
 			while (!q.isEmpty()) {
 				var j = q.pop();
 
-				for (var k: graph.successors(j)) {
+				for (var k : graph.successors(j)) {
 					if (reachable[k]) {
 						continue;
 					}
@@ -161,18 +161,23 @@ public class MatrixGraph<T> implements Graph<T> {
 	}
 
 	public MatrixGraph<T> reachability() {
-		return floyd().print();
+		return allNodesBfs();
 	}
 
-	private MatrixGraph<T> print() {
-		System.err.println();
+	@Override
+	public String toString() {
+		var builder = new StringBuilder();
+
+		builder.append('\n');
 		for (int i = 0; i < adjacency.length; i++) {
 			for (int j = 0; j < adjacency.length; j++) {
-				System.err.printf("%d ", adjacency[i][j] ? 1 : 0);
+				builder.append(adjacency[i][j] ? 1 : 0);
+				builder.append(' ');
 			}
-			System.err.println();
+			builder.append('\n');
 		}
-		return this;
+
+		return builder.toString();
 	}
 
 	private MatrixGraph<T> matrixProduct(MatrixGraph<T> other) {
@@ -208,7 +213,7 @@ public class MatrixGraph<T> implements Graph<T> {
 	}
 
 	public MatrixGraph<T> composition(MatrixGraph<T> other) {
-		return print().matrixProduct(other.print()).print();
+		return sparseComposition(other);
 	}
 
 	public MatrixGraph<T> union(MatrixGraph<T> other) {
