@@ -1,8 +1,8 @@
 package graph;
 
 import java.util.ArrayDeque;
-import java.util.Arrays;
 import java.util.Set;
+import java.util.Arrays;
 
 import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
@@ -12,32 +12,34 @@ import com.google.common.graph.Graph;
 import com.google.common.graph.GraphBuilder;
 import com.google.common.graph.MutableGraph;
 
+import org.apache.commons.lang3.tuple.Pair;
+
 import util.UnimplementedError;
 
-public class MatrixGraph<T> implements Graph<T> {
+public class PreprocessingMatrixGraph<T> implements Graph<T> {
     private final BiMap<T, Integer> nodeMap = HashBiMap.create();
-    private final boolean adjacency[][];
+    private final byte adjacency[][];
 
-    public MatrixGraph(Graph<T> graph) {
+    public PreprocessingMatrixGraph(Graph<T> graph, boolean isRWEdge) {
         int i = 0;
         for (var n : graph.nodes()) {
             nodeMap.put(n, i++);
         }
 
-        adjacency = new boolean[i][i];
+        adjacency = new byte[i][i];
         for (var e : graph.edges()) {
-            adjacency[nodeMap.get(e.source())][nodeMap.get(e.target())] = true;
+            adjacency[nodeMap.get(e.source())][nodeMap.get(e.target())] = (byte) (1 | (isRWEdge ? 0 : 2));
         }
     }
 
-    private MatrixGraph(BiMap<T, Integer> nodes) {
+    private PreprocessingMatrixGraph(BiMap<T, Integer> nodes) {
         nodeMap.putAll(nodes);
-        adjacency = new boolean[nodes.size()][nodes.size()];
+        adjacency = new byte[nodes.size()][nodes.size()];
     }
 
-    private MatrixGraph(MatrixGraph<T> graph) {
+    private PreprocessingMatrixGraph(PreprocessingMatrixGraph<T> graph) {
         nodeMap.putAll(graph.nodeMap);
-        adjacency = new boolean[graph.adjacency.length][];
+        adjacency = new byte[graph.adjacency.length][];
         for (var i = 0; i < adjacency.length; i++) {
             adjacency[i] = graph.adjacency[i].clone();
         }
@@ -110,7 +112,7 @@ public class MatrixGraph<T> implements Graph<T> {
 
     @Override
     public boolean hasEdgeConnecting(T nodeU, T nodeV) {
-        return adjacency[nodeMap.get(nodeU)][nodeMap.get(nodeV)];
+        return (adjacency[nodeMap.get(nodeU)][nodeMap.get(nodeV)] & 1) != 0;
     }
 
     @Override
@@ -118,16 +120,26 @@ public class MatrixGraph<T> implements Graph<T> {
         return hasEdgeConnecting(endpoints.source(), endpoints.target());
     }
 
-    private MatrixGraph<T> floyd() {
-        var result = new MatrixGraph<>(this);
+    public boolean hasNonRWEdgeConnecting(T nodeU, T nodeV) {
+        return adjacency[nodeMap.get(nodeU)][nodeMap.get(nodeV)] == 3;
+    }
+
+    private static int concatEdge(int edge1, int edge2) {
+        var has_edge = edge1 & edge2 & 1;
+        var has_non_rw_edge = (edge2 & 2 & (edge1 << 1));
+        return has_edge | has_non_rw_edge;
+    }
+
+    private PreprocessingMatrixGraph<T> floyd() {
+        var result = new PreprocessingMatrixGraph<>(this);
         for (var i = 0; i < adjacency.length; i++) {
-            result.adjacency[i][i] = true;
+            result.adjacency[i][i] |= 1;
         }
 
         for (var k = 0; k < adjacency.length; k++) {
             for (var i = 0; i < adjacency.length; i++) {
                 for (var j = 0; j < adjacency.length; j++) {
-                    result.adjacency[i][j] |= result.adjacency[i][k] & result.adjacency[k][j];
+                    result.adjacency[i][j] |= concatEdge(result.adjacency[i][k], result.adjacency[k][j]);
                 }
             }
         }
@@ -135,25 +147,25 @@ public class MatrixGraph<T> implements Graph<T> {
         return result;
     }
 
-    private MatrixGraph<T> allNodesBfs() {
-        var result = new MatrixGraph<>(this.nodeMap);
+    private PreprocessingMatrixGraph<T> allNodesBfs() {
+        var result = new PreprocessingMatrixGraph<>(this.nodeMap);
         var graph = toSparseGraph();
         for (var i = 0; i < adjacency.length; i++) {
             var q = new ArrayDeque<Integer>();
             var reachable = result.adjacency[i];
 
             q.add(i);
-            reachable[i] = true;
+            reachable[i] = 1;
             while (!q.isEmpty()) {
                 var j = q.pop();
 
                 for (var k : graph.successors(j)) {
-                    if (reachable[k]) {
-                        continue;
-                    }
+                    var isNew = (reachable[k] & 1) == 0;
+                    reachable[k] |= concatEdge(1, adjacency[j][k]);
 
-                    reachable[k] = true;
-                    q.push(k);
+                    if (isNew) {
+                        q.push(k);
+                    }
                 }
             }
         }
@@ -161,7 +173,7 @@ public class MatrixGraph<T> implements Graph<T> {
         return result;
     }
 
-    public MatrixGraph<T> reachability(String type) {
+    public PreprocessingMatrixGraph<T> reachability(String type) {
         switch (type) {
             case "sparse":
                 return allNodesBfs();
@@ -172,14 +184,14 @@ public class MatrixGraph<T> implements Graph<T> {
         }
     }
 
-    private MatrixGraph<T> matrixProduct(MatrixGraph<T> other) {
+    private PreprocessingMatrixGraph<T> matrixProduct(PreprocessingMatrixGraph<T> other) {
         assert nodeMap.equals(other.nodeMap);
 
-        var result = new MatrixGraph<>(nodeMap);
+        var result = new PreprocessingMatrixGraph<>(nodeMap);
         for (var i = 0; i < adjacency.length; i++) {
             for (var j = 0; j < adjacency.length; j++) {
                 for (var k = 0; k < adjacency.length; k++) {
-                    result.adjacency[i][k] |= adjacency[i][j] & other.adjacency[j][k];
+                    result.adjacency[i][k] |= concatEdge(adjacency[i][j], other.adjacency[j][k]);
                 }
             }
         }
@@ -187,16 +199,16 @@ public class MatrixGraph<T> implements Graph<T> {
         return result;
     }
 
-    private MatrixGraph<T> sparseComposition(MatrixGraph<T> other) {
+    private PreprocessingMatrixGraph<T> sparseComposition(PreprocessingMatrixGraph<T> other) {
         assert nodeMap.equals(other.nodeMap);
 
-        var result = new MatrixGraph<>(nodeMap);
+        var result = new PreprocessingMatrixGraph<>(nodeMap);
         var a = toSparseGraph();
         var b = other.toSparseGraph();
         for (var i = 0; i < adjacency.length; i++) {
             for (var j : a.predecessors(i)) {
                 for (var k : b.successors(i)) {
-                    result.adjacency[j][k] = true;
+                    result.adjacency[j][k] |= concatEdge(adjacency[j][i], other.adjacency[i][k]);
                 }
             }
         }
@@ -204,7 +216,7 @@ public class MatrixGraph<T> implements Graph<T> {
         return result;
     }
 
-    public MatrixGraph<T> composition(String type, MatrixGraph<T> other) {
+    public PreprocessingMatrixGraph<T> composition(String type, PreprocessingMatrixGraph<T> other) {
         switch (type) {
             case "sparse":
                 return sparseComposition(other);
@@ -215,13 +227,13 @@ public class MatrixGraph<T> implements Graph<T> {
         }
     }
 
-    public MatrixGraph<T> union(MatrixGraph<T> other) {
+    public PreprocessingMatrixGraph<T> union(PreprocessingMatrixGraph<T> other) {
         assert nodeMap.equals(other.nodeMap);
 
-        var result = new MatrixGraph<>(nodeMap);
+        var result = new PreprocessingMatrixGraph<>(nodeMap);
         for (var i = 0; i < adjacency.length; i++) {
             for (var j = 0; j < adjacency.length; j++) {
-                result.adjacency[i][j] = adjacency[i][j] | other.adjacency[i][j];
+                result.adjacency[i][j] = (byte) (adjacency[i][j] | other.adjacency[i][j]);
             }
         }
 
@@ -235,7 +247,7 @@ public class MatrixGraph<T> implements Graph<T> {
         }
         for (int i = 0; i < adjacency.length; i++) {
             for (int j = 0; j < adjacency.length; j++) {
-                if (adjacency[i][j]) {
+                if ((adjacency[i][j] & 1) != 0) {
                     graph.putEdge(i, j);
                 }
             }
@@ -251,7 +263,7 @@ public class MatrixGraph<T> implements Graph<T> {
         builder.append('\n');
         for (int i = 0; i < adjacency.length; i++) {
             for (int j = 0; j < adjacency.length; j++) {
-                builder.append(adjacency[i][j] ? 1 : 0);
+                builder.append(adjacency[i][j]);
                 builder.append(' ');
             }
             builder.append('\n');
@@ -262,11 +274,11 @@ public class MatrixGraph<T> implements Graph<T> {
 
     @Override
     public boolean equals(Object obj) {
-        if (!(obj instanceof MatrixGraph)) {
+        if (!(obj instanceof PreprocessingMatrixGraph)) {
             return false;
         }
 
-        var g = (MatrixGraph<T>) obj;
+        var g = (PreprocessingMatrixGraph<T>) obj;
         if (!nodeMap.equals(g.nodeMap)) {
             return false;
         }
