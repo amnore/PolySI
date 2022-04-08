@@ -53,22 +53,7 @@ public class SIVerifier<KeyType, ValueType> {
         System.err.printf("Constraints count: %d\n\n", constraints.size());
         profiler.endTick("ONESHOT_CONS");
 
-        profiler.startTick("SI_PRUNE");
-        int rounds = 1, solvedConstraints = 0, solvedThisRound;
-        System.err.printf("Pruning");
-        while ((solvedThisRound = pruneConstraints(graph, constraints)) != 0) {
-            System.err.printf(".");
-            solvedConstraints += solvedThisRound;
-            rounds++;
-            continue;
-        }
-        profiler.endTick("SI_PRUNE");
-        System.err.printf("Pruned %d rounds, solved %d constraints\n"
-                + "After prune: graphA: %d, graphB: %d\n",
-                rounds, solvedConstraints,
-                graph.getKnownGraphA().edges().size(),
-                graph.getKnownGraphB().edges().size());
-
+        Pruning.pruneConstraints("Post-BFS", graph, constraints);
         var solver = new SISolver<>(history, graph, constraints);
 
         profiler.startTick("ONESHOT_SOLVE");
@@ -159,66 +144,6 @@ public class SIVerifier<KeyType, ValueType> {
         return constraints;
     }
 
-    private int pruneConstraints(PrecedenceGraph<KeyType, ValueType> knownGraph,
-            Collection<SIConstraint<KeyType, ValueType>> constraints) {
-        var graphA = new MatrixGraph<>(knownGraph.getKnownGraphA());
-        var graphB = new MatrixGraph<>(knownGraph.getKnownGraphB());
-        var graphC = graphA.composition(graphB);
-        var reachability = graphA.union(graphC).reachability();
-        var solvedConstraints = new ArrayList<SIConstraint<KeyType, ValueType>>();
-
-        for (var c : constraints) {
-            var solveConflict = ((BiFunction<List<SIEdge<KeyType, ValueType>>, List<SIEdge<KeyType, ValueType>>, Boolean>) (
-                    edges,
-                    other) -> {
-                boolean hasConflict = false;
-                outer: for (var e : edges) {
-                    switch (e.getType()) {
-                        case WW:
-                            if (reachability.hasEdgeConnecting(e.getTo(), e.getFrom())) {
-                                hasConflict = true;
-                                // System.err.printf("conflict edge: %s\n", e);
-                                break outer;
-                            }
-                            break;
-                        case RW:
-                            for (var n : knownGraph.getKnownGraphA().predecessors(e.getFrom())) {
-                                if (reachability.hasEdgeConnecting(e.getTo(), n)) {
-                                    hasConflict = true;
-                                    // System.err.printf("conflict edge: %s\n", e);
-                                    break outer;
-                                }
-                            }
-                            break;
-                    }
-                }
-
-                if (hasConflict) {
-                    for (var e : other) {
-                        switch (e.getType()) {
-                            case WW:
-                                knownGraph.putEdgeToGraphA(e.getFrom(), e.getTo());
-                                break;
-                            case RW:
-                                knownGraph.putEdgeToGraphB(e.getFrom(), e.getTo());
-                                break;
-                        }
-                    }
-                }
-
-                return hasConflict;
-            });
-
-            if (solveConflict.apply(c.edges1, c.edges2) ||
-                    solveConflict.apply(c.edges2, c.edges1)) {
-                solvedConstraints.add(c);
-            }
-        }
-
-        // System.err.printf("solved constraints: %s\n", solvedConstraints);
-        constraints.removeAll(solvedConstraints);
-        return solvedConstraints.size();
-    }
 }
 
 @SuppressWarnings("UnstableApiUsage")
@@ -303,7 +228,7 @@ class SISolver<KeyType, ValueType> {
                             .stream()
                             .map(e -> g.edgeValue(e).get().size())
                             .reduce(Integer::sum)
-                            .get();
+                            .orElse(0);
                     System.err.printf("Graph %s edges count: %d\n", p.getLeft(),
                             edgesSize);
                 });
