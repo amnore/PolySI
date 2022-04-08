@@ -39,70 +39,56 @@ class TestMatrixGraph {
     @ParameterizedTest
     @ValueSource(doubles = { 1e-2, 5e-2, 0.1, 0.2, 0.5 })
     void testComposition(double density) {
-        var graph = new MatrixGraph<>(generateGraph(MATRIX_NODES, (int) (MATRIX_NODES * MATRIX_NODES * density)));
+        var graph = generateGraph(MATRIX_NODES, (int) (MATRIX_NODES * MATRIX_NODES * density));
+        var g = new MatrixGraph<>(graph);
+        var pg = new PreprocessingMatrixGraph<>(graph, false);
         System.err.printf("density: %g\n", density);
 
-        var sparseTimer = Stopwatch.createStarted();
-        var sparse = graph.composition("sparse", graph);
-        System.err.printf("sparse: %s\n", sparseTimer.elapsed());
+        var t = Stopwatch.createStarted();
+        var sparse = g.composition("sparse", g);
+        System.err.printf("sparse: %s\n", t.elapsed());
 
-        var denseTimer = Stopwatch.createStarted();
-        var dense = graph.composition("dense", graph);
-        System.err.printf("dense: %s\n", denseTimer.elapsed());
+        t = Stopwatch.createStarted();
+        var dense = g.composition("dense", g);
+        System.err.printf("dense: %s\n", t.elapsed());
+
+        t = Stopwatch.createStarted();
+        var psparse = pg.composition("sparse", pg);
+        System.err.printf("prepricessing sparse: %s\n", t.elapsed());
+
+        t = Stopwatch.createStarted();
+        var pdense = pg.composition("dense", pg);
+        System.err.printf("preprocessing dense: %s\n", t.elapsed());
 
         assertEquals(sparse, dense);
+        assertEquals(psparse, pdense);
     }
 
     @ParameterizedTest
     @ValueSource(doubles = { 1e-3, 5e-3, 1e-2, 5e-2 })
     void testReachability(double density) {
-        var graph = new MatrixGraph<>(generateGraph(MATRIX_NODES, (int) (MATRIX_NODES * MATRIX_NODES * density)));
+        var graph = generateGraph(MATRIX_NODES, (int) (MATRIX_NODES * MATRIX_NODES * density));
+        var g = new MatrixGraph<>(graph);
+        var pg = new PreprocessingMatrixGraph<>(graph, false);
         System.err.printf("density: %g\n", density);
 
-        var sparseTimer = Stopwatch.createStarted();
-        var sparse = graph.reachability("sparse");
-        System.err.printf("sparse: %s\n", sparseTimer.elapsed());
+        var t = Stopwatch.createStarted();
+        var sparse = g.reachability("sparse");
+        System.err.printf("sparse: %s\n", t.elapsed());
 
-        var denseTimer = Stopwatch.createStarted();
-        var dense = graph.reachability("dense");
-        System.err.printf("dense: %s\n", denseTimer.elapsed());
+        t = Stopwatch.createStarted();
+        var dense = g.reachability("dense");
+        System.err.printf("dense: %s\n", t.elapsed());
 
-        assertEquals(sparse, dense);
-    }
+        t = Stopwatch.createStarted();
+        var psparse = pg.reachability("sparse");
+        System.err.printf("preprocessing sparse: %s\n", t.elapsed());
 
-    @ParameterizedTest
-    @ValueSource(doubles = { 1e-2, 5e-2, 0.1, 0.2, 0.5 })
-    void testPreprocessingComposition(double density) {
-        var graph = new PreprocessingMatrixGraph<>(
-                generateGraph(MATRIX_NODES, (int) (MATRIX_NODES * MATRIX_NODES * density)), false);
-        System.err.printf("density: %g\n", density);
-
-        var sparseTimer = Stopwatch.createStarted();
-        var sparse = graph.composition("sparse", graph);
-        System.err.printf("sparse: %s\n", sparseTimer.elapsed());
-
-        var denseTimer = Stopwatch.createStarted();
-        var dense = graph.composition("dense", graph);
-        System.err.printf("dense: %s\n", denseTimer.elapsed());
+        t = Stopwatch.createStarted();
+        var pdense = pg.reachability("dense");
+        System.err.printf("preprocessing dense: %s\n", t.elapsed());
 
         assertEquals(sparse, dense);
-    }
-
-    @ParameterizedTest
-    @ValueSource(doubles = { 1e-3, 5e-3, 1e-2, 5e-2 })
-    void testPreprocessingReachability(double density) {
-        var graph = new PreprocessingMatrixGraph<>(
-                generateGraph(MATRIX_NODES, (int) (MATRIX_NODES * MATRIX_NODES * density)), false);
-        System.err.printf("density: %g\n", density);
-
-        var sparseTimer = Stopwatch.createStarted();
-        var sparse = graph.reachability("sparse");
-        System.err.printf("sparse: %s\n", sparseTimer.elapsed());
-
-        var denseTimer = Stopwatch.createStarted();
-        var dense = graph.reachability("dense");
-        System.err.printf("dense: %s\n", denseTimer.elapsed());
-
-        assertEquals(sparse, dense);
+        assertEquals(psparse, pdense);
     }
 }
