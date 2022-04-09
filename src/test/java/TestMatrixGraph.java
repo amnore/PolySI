@@ -21,7 +21,7 @@ import graph.MatrixGraph;
 import graph.PreprocessingMatrixGraph;
 
 class TestMatrixGraph {
-    private static final int MATRIX_NODES = 500;
+    private static final int MATRIX_NODES = 2000;
 
     private Graph<Integer> generateGraph(int nodeNum, int edgesNum) {
         MutableGraph<Integer> graph = GraphBuilder.directed().allowsSelfLoops(true).build();
@@ -37,7 +37,7 @@ class TestMatrixGraph {
     }
 
     @ParameterizedTest
-    @ValueSource(doubles = { 1e-2, 5e-2, 0.1, 0.2, 0.5 })
+    @ValueSource(doubles = { 1e-5, 1e-4, 1e-3, 1e-2 })
     void testComposition(double density) {
         var graph = generateGraph(MATRIX_NODES, (int) (MATRIX_NODES * MATRIX_NODES * density));
         var g = new MatrixGraph<>(graph);
@@ -62,6 +62,7 @@ class TestMatrixGraph {
 
         assertEquals(sparse, dense);
         assertEquals(psparse, pdense);
+        assertEquals(new MatrixGraph<>(pdense), dense);
     }
 
     @ParameterizedTest
@@ -90,5 +91,6 @@ class TestMatrixGraph {
 
         assertEquals(sparse, dense);
         assertEquals(psparse, pdense);
+        assertEquals(new MatrixGraph<>(pdense), dense);
     }
 }

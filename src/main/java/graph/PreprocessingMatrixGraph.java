@@ -3,6 +3,7 @@ package graph;
 import java.util.ArrayDeque;
 import java.util.Set;
 import java.util.Arrays;
+import java.util.HashSet;
 
 import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
@@ -52,7 +53,18 @@ public class PreprocessingMatrixGraph<T> implements Graph<T> {
 
     @Override
     public Set<EndpointPair<T>> edges() {
-        throw new UnimplementedError();
+        var result = new HashSet<EndpointPair<T>>();
+        var map = nodeMap.inverse();
+
+        for (int i = 0; i < adjacency.length; i++) {
+            for (int j = 0; j < adjacency.length; j++) {
+                if (adjacency[i][j] != 0) {
+                    result.add(EndpointPair.ordered(map.get(i), map.get(j)));
+                }
+            }
+        }
+
+        return result;
     }
 
     @Override
