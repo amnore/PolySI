@@ -1,9 +1,13 @@
 package graph;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import com.google.common.collect.BiMap;
@@ -13,6 +17,7 @@ import com.google.common.graph.ElementOrder;
 import com.google.common.graph.EndpointPair;
 import com.google.common.graph.Graph;
 import com.google.common.graph.GraphBuilder;
+import com.google.common.graph.Graphs;
 import com.google.common.graph.MutableGraph;
 
 import util.UnimplementedError;
@@ -67,7 +72,32 @@ public class MatrixGraph<T> implements Graph<T> {
         return result;
     }
 
+    private MatrixGraph<T> bfsWithNoCycle(List<Integer> topoOrder) {
+        var result = new MatrixGraph<T>(nodeMap);
+
+        for (var i = topoOrder.size() - 1; i >= 0; i--) {
+            var n = topoOrder.get(i);
+            result.set(n, n);
+
+            for (var j : successorIds(n).toArray()) {
+                assert topoOrder.indexOf(j) > i;
+                assert result.get(j, j);
+                result.set(n, j);
+                for (var k = 0; k < adjacency[0].length; k++) {
+                    result.adjacency[n][k] |= result.adjacency[j][k];
+                }
+            }
+        }
+
+        return result;
+    }
+
     private MatrixGraph<T> allNodesBfs() {
+        var topoOrder = topoSortId();
+        if (topoOrder != null) {
+            return bfsWithNoCycle(topoOrder);
+        }
+
         var result = new MatrixGraph<>(this.nodeMap);
         var graph = toSparseGraph();
         for (var i = 0; i < adjacency.length; i++) {
@@ -163,8 +193,40 @@ public class MatrixGraph<T> implements Graph<T> {
         return result;
     }
 
+    private List<Integer> topoSortId() {
+        var nodes = new ArrayList<Integer>();
+        var inDegrees = new int[adjacency.length];
+
+        for (var i = 0; i < adjacency.length; i++) {
+            inDegrees[i] = inDegree(i);
+            if (inDegrees[i] == 0) {
+                nodes.add(i);
+            }
+        }
+
+        for (var i = 0; i < nodes.size(); i++) {
+            successorIds(nodes.get(i)).forEach(n -> {
+                if (--inDegrees[n] == 0) {
+                    nodes.add(n);
+                }
+            });
+        }
+
+        return nodes.size() == adjacency.length ? nodes : null;
+    }
+
+    public List<T> topologicalSort() {
+        var order = topoSortId();
+
+        return order == null ? null
+                : order.stream()
+                        .map(n -> nodeMap.inverse().get(n))
+                        .collect(Collectors.toList());
+    }
+
     private Graph<Integer> toSparseGraph() {
-        MutableGraph<Integer> graph = GraphBuilder.directed().allowsSelfLoops(true).build();
+        MutableGraph<Integer> graph = GraphBuilder.directed()
+                .allowsSelfLoops(true).build();
         for (int i = 0; i < adjacency.length; i++) {
             graph.addNode(i);
         }
@@ -284,7 +346,7 @@ public class MatrixGraph<T> implements Graph<T> {
 
     @Override
     public int inDegree(T node) {
-        throw new UnimplementedError();
+        return inDegree(nodeMap.get(node));
     }
 
     @Override
@@ -312,5 +374,24 @@ public class MatrixGraph<T> implements Graph<T> {
 
     private void set(T nodeU, T nodeV) {
         set(nodeMap.get(nodeU), nodeMap.get(nodeV));
+    }
+
+    private int inDegree(int n) {
+        var inDegree = 0;
+        for (var i = 0; i < adjacency.length; i++) {
+            inDegree += get(i, n) ? 1 : 0;
+        }
+
+        return inDegree;
+    }
+
+    private int outDegree(int n) {
+        return Arrays.stream(adjacency[n])
+                .mapToInt(Long::bitCount)
+                .reduce(Integer::sum).orElse(0);
+    }
+
+    private IntStream successorIds(int n) {
+        return IntStream.range(0, adjacency.length).filter(i -> get(n, i));
     }
 }

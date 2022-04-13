@@ -9,35 +9,39 @@ import com.google.common.base.Stopwatch;
 import com.google.common.collect.Streams;
 import com.google.common.graph.Graph;
 import com.google.common.graph.GraphBuilder;
+import com.google.common.graph.ImmutableGraph;
 import com.google.common.graph.MutableGraph;
 
 import org.apache.commons.lang3.tuple.Pair;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import graph.MatrixGraph;
 import graph.PreprocessingMatrixGraph;
 
 class TestMatrixGraph {
-    private static final int MATRIX_NODES = 2000;
+    private static final int MATRIX_NODES = 1000;
 
     private Graph<Integer> generateGraph(int nodeNum, int edgesNum) {
-        MutableGraph<Integer> graph = GraphBuilder.directed().allowsSelfLoops(true).build();
+        MutableGraph<Integer> graph = GraphBuilder.directed().build();
 
         IntStream.range(0, nodeNum).forEach(n -> graph.addNode(n));
 
         Streams.zip(RandomGenerator.getDefault().ints(0, nodeNum).boxed(),
                 RandomGenerator.getDefault().ints(0, nodeNum).boxed(), Pair::of)
                 .limit(edgesNum)
-                .forEach(p -> graph.putEdge(p.getLeft(), p.getRight()));
+                .forEach(p -> {
+                    if (!p.getLeft().equals(p.getRight())) {
+                        graph.putEdge(p.getLeft(), p.getRight());
+                    }
+                });
 
         return graph;
     }
 
     @ParameterizedTest
-    @ValueSource(doubles = { 1e-5, 1e-4, 1e-3, 1e-2 })
+    @ValueSource(doubles = { 5e-3 })
     void testComposition(double density) {
         var graph = generateGraph(MATRIX_NODES, (int) (MATRIX_NODES * MATRIX_NODES * density));
         var g = new MatrixGraph<>(graph);
@@ -66,7 +70,7 @@ class TestMatrixGraph {
     }
 
     @ParameterizedTest
-    @ValueSource(doubles = { 1e-3, 5e-3, 1e-2, 5e-2 })
+    @ValueSource(doubles = { 5e-3 })
     void testReachability(double density) {
         var graph = generateGraph(MATRIX_NODES, (int) (MATRIX_NODES * MATRIX_NODES * density));
         var g = new MatrixGraph<>(graph);
@@ -92,5 +96,19 @@ class TestMatrixGraph {
         assertEquals(sparse, dense);
         assertEquals(psparse, pdense);
         assertEquals(new MatrixGraph<>(pdense), dense);
+    }
+
+    @Test
+    void testTopoSort() {
+        var graph = new MatrixGraph<Integer>(
+                GraphBuilder.directed().<Integer>immutable()
+                        .addNode(1)
+                        .addNode(2)
+                        .addNode(3)
+                        .putEdge(1, 2)
+                        .putEdge(2, 3)
+                        .build());
+
+        assertEquals(graph.topologicalSort(), List.of(1, 2, 3));
     }
 }

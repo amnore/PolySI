@@ -49,10 +49,15 @@ public class SIVerifier<KeyType, ValueType> {
         profiler.startTick("SI_GEN_CONSTRAINTS");
         var constraints = generateConstraints(history, graph);
         profiler.endTick("SI_GEN_CONSTRAINTS");
-        System.err.printf("Constraints count: %d\n\n", constraints.size());
+        System.err.printf("Constraints count: %d\nTotal edges in constraints: %d\n",
+                constraints.size(),
+                constraints.stream()
+                        .map(c -> c.edges1.size() + c.edges2.size())
+                        .reduce(Integer::sum).orElse(0));
         profiler.endTick("ONESHOT_CONS");
 
-        Pruning.pruneConstraints("Post-BFS", graph, constraints);
+        Pruning.pruneConstraints("Post-Floyd", graph, constraints);
+
         var solver = new SISolver<>(history, graph, constraints);
 
         profiler.startTick("ONESHOT_SOLVE");

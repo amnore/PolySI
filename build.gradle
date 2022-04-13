@@ -8,7 +8,7 @@ version = '0.0.1-SNAPSHOT'
 description = 'CobraVerifier'
 
 application {
-	mainClass = 'Main'
+    mainClass = 'Main'
 }
 
 sourceCompatibility = 11
@@ -30,25 +30,26 @@ dependencies {
     implementation 'info.picocli:picocli:4.6.3'
     implementation files('monosat/monosat.jar')
 
-	testImplementation 'org.junit.jupiter:junit-jupiter:5.8.2'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.8.2'
 }
 
 test {
-	systemProperty "java.library.path", "$projectDir/monosat"
-	useJUnitPlatform()
+    systemProperty "java.library.path", "$projectDir/monosat"
+    jvmArgs += [ "-Xmx4096m" ]
+    useJUnitPlatform()
 }
 
 tasks.withType(JavaExec) {
-	systemProperty "java.library.path", "$projectDir/monosat"
+    systemProperty "java.library.path", "$projectDir/monosat"
 }
 
 jar {
-  manifest {
-    attributes 'Main-Class': 'Main'
-  }
+    manifest {
+        attributes 'Main-Class': 'Main'
+    }
 
-  duplicatesStrategy('exclude')
-  from {
-    configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
-  }
+    duplicatesStrategy('exclude')
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
 }

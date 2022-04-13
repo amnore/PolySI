@@ -53,12 +53,24 @@ class Pruning {
             String type,
             PrecedenceGraph<KeyType, ValueType> knownGraph,
             Collection<SIConstraint<KeyType, ValueType>> constraints) {
+        var profiler = Profiler.getInstance();
+
+        profiler.startTick("SI_PRUNE_POST_GRAPH_A_B");
         var graphA = new MatrixGraph<>(knownGraph.getKnownGraphA());
         var graphB = new MatrixGraph<>(knownGraph.getKnownGraphB());
+        profiler.endTick("SI_PRUNE_POST_GRAPH_A_B");
+
+        profiler.startTick("SI_PRUNE_POST_GRAPH_C");
         var graphC = graphA.composition(type, graphB);
+        profiler.endTick("SI_PRUNE_POST_GRAPH_C");
+
+        profiler.startTick("SI_PRUNE_POST_REACHABILITY");
         var reachability = graphA.union(graphC).reachability(type);
+        profiler.endTick("SI_PRUNE_POST_REACHABILITY");
+
         var solvedConstraints = new ArrayList<SIConstraint<KeyType, ValueType>>();
 
+        profiler.startTick("SI_PRUNE_POST_CHECK");
         for (var c : constraints) {
             var solveConflict = ((BiFunction<List<SIEdge<KeyType, ValueType>>, List<SIEdge<KeyType, ValueType>>, Boolean>) (
                     edges,
@@ -106,6 +118,7 @@ class Pruning {
                 solvedConstraints.add(c);
             }
         }
+        profiler.endTick("SI_PRUNE_POST_CHECK");
 
         // System.err.printf("solved constraints: %s\n", solvedConstraints);
         constraints.removeAll(solvedConstraints);
@@ -116,12 +129,25 @@ class Pruning {
             String type,
             PrecedenceGraph<KeyType, ValueType> knownGraph,
             Collection<SIConstraint<KeyType, ValueType>> constraints) {
-        var graphA = new PreprocessingMatrixGraph<>(knownGraph.getKnownGraphA(), false);
-        var graphB = new PreprocessingMatrixGraph<>(knownGraph.getKnownGraphB(), true);
+        var profiler = Profiler.getInstance();
+
+        profiler.startTick("SI_PRUNE_POST_GRAPH_A_B");
+        var graphA = new MatrixGraph<>(knownGraph.getKnownGraphA());
+        var graphB = new MatrixGraph<>(knownGraph.getKnownGraphB());
+        profiler.endTick("SI_PRUNE_POST_GRAPH_A_B");
+
+        profiler.startTick("SI_PRUNE_POST_GRAPH_C");
         var graphC = graphA.composition(type, graphB);
+        profiler.endTick("SI_PRUNE_POST_GRAPH_C");
+
+        profiler.startTick("SI_PRUNE_POST_REACHABILITY");
         var reachability = graphA.union(graphC).reachability(type);
+        var RWReachability = reachability.composition(type, graphA);
+        profiler.endTick("SI_PRUNE_POST_REACHABILITY");
+
         var solvedConstraints = new ArrayList<SIConstraint<KeyType, ValueType>>();
 
+        profiler.startTick("SI_PRUNE_POST_CHECK");
         for (var c : constraints) {
             var solveConflict = ((BiFunction<List<SIEdge<KeyType, ValueType>>, List<SIEdge<KeyType, ValueType>>, Boolean>) (
                     edges, other) -> {
@@ -132,12 +158,12 @@ class Pruning {
                             case WW:
                                 return reachability.hasEdgeConnecting(edge.getTo(), edge.getFrom());
                             default:
-                                return reachability.hasNonRWEdgeConnecting(edge.getTo(), edge.getFrom());
+                                return RWReachability.hasEdgeConnecting(edge.getTo(), edge.getFrom());
                         }
                     });
 
                     if (hasInverseEdge.apply(e)) {
-                        System.err.printf("conflict edge: %s\n", e);
+                        // System.err.printf("conflict edge: %s\n", e);
                         hasConflict = true;
                         break;
                     }
@@ -163,6 +189,7 @@ class Pruning {
                 solvedConstraints.add(c);
             }
         }
+        profiler.endTick("SI_PRUNE_POST_CHECK");
 
         constraints.removeAll(solvedConstraints);
         return solvedConstraints.size();
