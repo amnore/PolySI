@@ -1,6 +1,5 @@
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import java.time.Clock;
 import java.util.List;
 import java.util.random.RandomGenerator;
 import java.util.stream.IntStream;
@@ -9,7 +8,6 @@ import com.google.common.base.Stopwatch;
 import com.google.common.collect.Streams;
 import com.google.common.graph.Graph;
 import com.google.common.graph.GraphBuilder;
-import com.google.common.graph.ImmutableGraph;
 import com.google.common.graph.MutableGraph;
 
 import org.apache.commons.lang3.tuple.Pair;
@@ -18,7 +16,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import graph.MatrixGraph;
-import graph.PreprocessingMatrixGraph;
 
 class TestMatrixGraph {
     private static final int MATRIX_NODES = 1000;
@@ -45,7 +42,6 @@ class TestMatrixGraph {
     void testComposition(double density) {
         var graph = generateGraph(MATRIX_NODES, (int) (MATRIX_NODES * MATRIX_NODES * density));
         var g = new MatrixGraph<>(graph);
-        var pg = new PreprocessingMatrixGraph<>(graph, false);
         System.err.printf("density: %g\n", density);
 
         var t = Stopwatch.createStarted();
@@ -56,17 +52,7 @@ class TestMatrixGraph {
         var dense = g.composition("dense", g);
         System.err.printf("dense: %s\n", t.elapsed());
 
-        t = Stopwatch.createStarted();
-        var psparse = pg.composition("sparse", pg);
-        System.err.printf("prepricessing sparse: %s\n", t.elapsed());
-
-        t = Stopwatch.createStarted();
-        var pdense = pg.composition("dense", pg);
-        System.err.printf("preprocessing dense: %s\n", t.elapsed());
-
         assertEquals(sparse, dense);
-        assertEquals(psparse, pdense);
-        assertEquals(new MatrixGraph<>(pdense), dense);
     }
 
     @ParameterizedTest
@@ -74,7 +60,6 @@ class TestMatrixGraph {
     void testReachability(double density) {
         var graph = generateGraph(MATRIX_NODES, (int) (MATRIX_NODES * MATRIX_NODES * density));
         var g = new MatrixGraph<>(graph);
-        var pg = new PreprocessingMatrixGraph<>(graph, false);
         System.err.printf("density: %g\n", density);
 
         var t = Stopwatch.createStarted();
@@ -85,17 +70,7 @@ class TestMatrixGraph {
         var dense = g.reachability("dense");
         System.err.printf("dense: %s\n", t.elapsed());
 
-        t = Stopwatch.createStarted();
-        var psparse = pg.reachability("sparse");
-        System.err.printf("preprocessing sparse: %s\n", t.elapsed());
-
-        t = Stopwatch.createStarted();
-        var pdense = pg.reachability("dense");
-        System.err.printf("preprocessing dense: %s\n", t.elapsed());
-
         assertEquals(sparse, dense);
-        assertEquals(psparse, pdense);
-        assertEquals(new MatrixGraph<>(pdense), dense);
     }
 
     @Test
