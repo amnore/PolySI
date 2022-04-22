@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -22,9 +23,10 @@ import com.google.common.graph.MutableGraph;
 
 import util.UnimplementedError;
 
-public class MatrixGraph<T> implements Graph<T> {
+public class MatrixGraph<T> implements MutableGraph<T> {
     private final BiMap<T, Integer> nodeMap = HashBiMap.create();
     private final long adjacency[][];
+    private static final int LONG_BITS = 64;
 
     public MatrixGraph(Graph<T> graph) {
         int i = 0;
@@ -32,15 +34,16 @@ public class MatrixGraph<T> implements Graph<T> {
             nodeMap.put(n, i++);
         }
 
-        adjacency = new long[i][(i + Long.BYTES - 1) / Long.BYTES];
+        adjacency = new long[i][(i + LONG_BITS - 1) / LONG_BITS];
         for (var e : graph.edges()) {
-            set(e.source(), e.target());
+            putEdge(e.source(), e.target());
         }
     }
 
     private MatrixGraph(BiMap<T, Integer> nodes) {
         nodeMap.putAll(nodes);
-        adjacency = new long[nodes.size()][(nodes.size() + Long.BYTES - 1) / Long.BYTES];
+        adjacency = new long[nodes.size()][(nodes.size() + LONG_BITS - 1)
+                / LONG_BITS];
     }
 
     private MatrixGraph(MatrixGraph<T> graph) {
@@ -93,7 +96,7 @@ public class MatrixGraph<T> implements Graph<T> {
     }
 
     private MatrixGraph<T> allNodesBfs() {
-        var topoOrder = topoSortId();
+        var topoOrder = topoSortId().orElse(null);
         if (topoOrder != null) {
             return bfsWithNoCycle(topoOrder);
         }
@@ -124,12 +127,12 @@ public class MatrixGraph<T> implements Graph<T> {
 
     public MatrixGraph<T> reachability(String type) {
         switch (type) {
-            case "sparse":
-                return allNodesBfs();
-            case "dense":
-                return floyd();
-            default:
-                throw new RuntimeException(String.format("unknown type %s", type));
+        case "sparse":
+            return allNodesBfs();
+        case "dense":
+            return floyd();
+        default:
+            throw new RuntimeException(String.format("unknown type %s", type));
         }
     }
 
@@ -171,12 +174,12 @@ public class MatrixGraph<T> implements Graph<T> {
 
     public MatrixGraph<T> composition(String type, MatrixGraph<T> other) {
         switch (type) {
-            case "sparse":
-//                return sparseComposition(other);
-            case "dense":
-                return matrixProduct(other);
-            default:
-                throw new RuntimeException(String.format("invalid type %s", type));
+        case "sparse":
+            // return sparseComposition(other);
+        case "dense":
+            return matrixProduct(other);
+        default:
+            throw new RuntimeException(String.format("invalid type %s", type));
         }
     }
 
@@ -186,14 +189,15 @@ public class MatrixGraph<T> implements Graph<T> {
         var result = new MatrixGraph<>(nodeMap);
         for (var i = 0; i < adjacency.length; i++) {
             for (var j = 0; j < adjacency[0].length; j++) {
-                result.adjacency[i][j] = adjacency[i][j] | other.adjacency[i][j];
+                result.adjacency[i][j] = adjacency[i][j]
+                        | other.adjacency[i][j];
             }
         }
 
         return result;
     }
 
-    private List<Integer> topoSortId() {
+    private Optional<List<Integer>> topoSortId() {
         var nodes = new ArrayList<Integer>();
         var inDegrees = new int[adjacency.length];
 
@@ -212,16 +216,18 @@ public class MatrixGraph<T> implements Graph<T> {
             });
         }
 
-        return nodes.size() == adjacency.length ? nodes : null;
+        return nodes.size() == adjacency.length ? Optional.of(nodes)
+                : Optional.empty();
     }
 
-    public List<T> topologicalSort() {
-        var order = topoSortId();
+    public Optional<List<T>> topologicalSort() {
+        return topoSortId()
+                .map(o -> o.stream().map(n -> nodeMap.inverse().get(n))
+                        .collect(Collectors.toList()));
+    }
 
-        return order == null ? null
-                : order.stream()
-                        .map(n -> nodeMap.inverse().get(n))
-                        .collect(Collectors.toList());
+    public boolean hasLoops() {
+        return topoSortId().isEmpty();
     }
 
     private Graph<Integer> toSparseGraph() {
@@ -331,7 +337,9 @@ public class MatrixGraph<T> implements Graph<T> {
 
     @Override
     public Set<T> successors(T node) {
-        throw new UnimplementedError();
+        var inv = nodeMap.inverse();
+        return successorIds(nodeMap.get(node)).mapToObj(inv::get)
+                .collect(Collectors.toSet());
     }
 
     @Override
@@ -351,7 +359,7 @@ public class MatrixGraph<T> implements Graph<T> {
 
     @Override
     public int outDegree(T node) {
-        throw new UnimplementedError();
+        return outDegree(nodeMap.get(node));
     }
 
     @Override
@@ -365,15 +373,15 @@ public class MatrixGraph<T> implements Graph<T> {
     }
 
     private boolean get(int i, int j) {
-        return (adjacency[i][j / Long.BYTES] & (1L << (j % Long.BYTES))) != 0;
+        return (adjacency[i][j / LONG_BITS] & (1L << (j % LONG_BITS))) != 0;
     }
 
     private void set(int i, int j) {
-        adjacency[i][j / Long.BYTES] |= (1L << (j % Long.BYTES));
+        adjacency[i][j / LONG_BITS] |= (1L << (j % LONG_BITS));
     }
 
-    private void set(T nodeU, T nodeV) {
-        set(nodeMap.get(nodeU), nodeMap.get(nodeV));
+    private void clear(int i, int j) {
+        adjacency[i][j / LONG_BITS] &= ~(1L << (j % LONG_BITS));
     }
 
     private int inDegree(int n) {
@@ -386,12 +394,49 @@ public class MatrixGraph<T> implements Graph<T> {
     }
 
     private int outDegree(int n) {
-        return Arrays.stream(adjacency[n])
-                .mapToInt(Long::bitCount)
+        return Arrays.stream(adjacency[n]).mapToInt(Long::bitCount)
                 .reduce(Integer::sum).orElse(0);
     }
 
     private IntStream successorIds(int n) {
         return IntStream.range(0, adjacency.length).filter(i -> get(n, i));
+    }
+
+    @Override
+    public boolean addNode(T node) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean putEdge(T nodeU, T nodeV) {
+        var i = nodeMap.get(nodeU);
+        var j = nodeMap.get(nodeV);
+        boolean hasEdge = get(i, j);
+        set(i, j);
+        return !hasEdge;
+    }
+
+    @Override
+    public boolean putEdge(EndpointPair<T> endpoints) {
+        return putEdge(endpoints.source(), endpoints.target());
+    }
+
+    @Override
+    public boolean removeNode(T node) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean removeEdge(T nodeU, T nodeV) {
+        var i = nodeMap.get(nodeU);
+        var j = nodeMap.get(nodeV);
+        boolean hasEdge = get(i, j);
+        clear(i, j);
+        return hasEdge;
+    }
+
+    @Override
+    public boolean removeEdge(EndpointPair<T> endpoints) {
+        return removeEdge(endpoints.source(), endpoints.target());
     }
 }
