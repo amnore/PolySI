@@ -83,14 +83,14 @@ public class PrecedenceGraph<KeyType, ValueType> {
 
 	public void putEdgeToGraphA(Transaction<KeyType, ValueType> u, Transaction<KeyType, ValueType> v) {
 		knownGraphA.putEdge(u, v);
-		if (knownGraphB.hasEdgeConnecting(u, v)) {
-			knownGraphB.removeEdge(u, v);
-		}
+//		if (knownGraphB.hasEdgeConnecting(u, v)) {
+//			knownGraphB.removeEdge(u, v);
+//		}
 	}
 
 	public void putEdgeToGraphB(Transaction<KeyType, ValueType> u, Transaction<KeyType, ValueType> v) {
-		if (!knownGraphA.hasEdgeConnecting(u, v)) {
+//		if (!knownGraphA.hasEdgeConnecting(u, v)) {
 			knownGraphB.putEdge(u, v);
-		}
+//		}
 	}
 }

@@ -1,6 +1,7 @@
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.random.RandomGenerator;
 import java.util.stream.IntStream;
 
@@ -84,6 +85,6 @@ class TestMatrixGraph {
                         .putEdge(2, 3)
                         .build());
 
-        assertEquals(graph.topologicalSort(), List.of(1, 2, 3));
+        assertEquals(graph.topologicalSort(), Optional.of(List.of(1, 2, 3)));
     }
 }
