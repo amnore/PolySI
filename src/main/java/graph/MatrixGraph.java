@@ -129,7 +129,7 @@ public class MatrixGraph<T> implements Graph<T> {
             case "dense":
                 return floyd();
             default:
-                throw new RuntimeException("unknown type %s".formatted(type));
+                throw new RuntimeException(String.format("unknown type %s", type));
         }
     }
 
@@ -172,11 +172,11 @@ public class MatrixGraph<T> implements Graph<T> {
     public MatrixGraph<T> composition(String type, MatrixGraph<T> other) {
         switch (type) {
             case "sparse":
-                return sparseComposition(other);
+//                return sparseComposition(other);
             case "dense":
                 return matrixProduct(other);
             default:
-                throw new RuntimeException("invalid type %s".formatted(type));
+                throw new RuntimeException(String.format("invalid type %s", type));
         }
     }
 

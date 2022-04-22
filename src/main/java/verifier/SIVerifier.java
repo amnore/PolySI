@@ -11,6 +11,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import monosat.Lit;
 import monosat.Logic;
 import monosat.Solver;
@@ -56,7 +57,7 @@ public class SIVerifier<KeyType, ValueType> {
                         .reduce(Integer::sum).orElse(0));
         profiler.endTick("ONESHOT_CONS");
 
-        Pruning.pruneConstraints("Post-Floyd", graph, constraints);
+        Pruning.pruneConstraints("Post-BFS", graph, constraints);
 
         var solver = new SISolver<>(history, graph, constraints);
 
@@ -143,7 +144,8 @@ public class SIVerifier<KeyType, ValueType> {
         var constraints = new HashSet<SIConstraint<KeyType, ValueType>>();
         forEachWriteSameKey.accept((a, c) -> constraints.add(new SIConstraint<>(
                 constraintEdges.get(Pair.of(a, c)),
-                constraintEdges.get(Pair.of(c, a)))));
+                constraintEdges.get(Pair.of(c, a)),
+                a, c)));
 
         return constraints;
     }
@@ -314,9 +316,19 @@ class SIEdge<KeyType, ValueType> {
 }
 
 @Data
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 class SIConstraint<KeyType, ValueType> {
+
+    // writeTransaction1 -> writeTransaction2
     final List<SIEdge<KeyType, ValueType>> edges1;
+
+    // writeTransaction2 -> writeTransaction1
     final List<SIEdge<KeyType, ValueType>> edges2;
+
+    @EqualsAndHashCode.Include
+    final Transaction<KeyType, ValueType> writeTransaction1;
+    @EqualsAndHashCode.Include
+    final Transaction<KeyType, ValueType> writeTransaction2;
 }
 
 class Utils {

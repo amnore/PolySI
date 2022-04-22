@@ -2,7 +2,6 @@ package verifier;
 
 import graph.PrecedenceGraph;
 import util.Profiler;
-import graph.PreprocessingMatrixGraph;
 import graph.MatrixGraph;
 import java.util.Collection;
 import java.util.ArrayList;
@@ -121,7 +120,9 @@ class Pruning {
         profiler.endTick("SI_PRUNE_POST_CHECK");
 
         // System.err.printf("solved constraints: %s\n", solvedConstraints);
-        constraints.removeAll(solvedConstraints);
+        // constraints.removeAll(solvedConstraints);
+        // java removeAll has performance bugs; do it manually
+        solvedConstraints.forEach(constraints::remove);
         return solvedConstraints.size();
     }
 
