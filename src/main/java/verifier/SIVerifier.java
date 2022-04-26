@@ -475,14 +475,15 @@ class Utils {
                 if ((p.getSession() != n.getSession() && firstKnownInSession
                         .get(Pair.of(p, n.getSession())) == n)
                         || (p.getSession() == n.getSession() && orderInSession
-                                .get(p) == orderInSession.get(n) + 1)) {
+                                .get(n) <= orderInSession.get(p) + 1)) {
                     edges.computeIfAbsent(Pair.of(p, n),
                             k -> getKnownEdge.apply(graphA, p, n));
                 }
 
                 for (var s : graphB.successors(n)) {
-                    if (p.getSession() == s.getSession() || firstKnownInSession
-                            .get(Pair.of(p, s.getSession())) != s) {
+                    if ((p.getSession() == s.getSession()
+                            && orderInSession.get(s) > orderInSession.get(p) + 1)
+                        || firstKnownInSession.get(Pair.of(p, s.getSession())) != s) {
                         continue;
                     }
 
