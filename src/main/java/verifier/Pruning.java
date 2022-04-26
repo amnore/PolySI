@@ -2,23 +2,19 @@ package verifier;
 
 import graph.PrecedenceGraph;
 import history.History;
-import history.History.Session;
 import history.History.Transaction;
 import util.Profiler;
 import graph.MatrixGraph;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-
-import com.google.common.collect.Streams;
 
 import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.List;
+import java.util.Map;
 
 class Pruning {
     static <KeyType, ValueType> boolean pruneConstraints(String method,
@@ -83,6 +79,7 @@ class Pruning {
         profiler.startTick("SI_PRUNE_POST_GRAPH_A_B");
         var graphA = new MatrixGraph<>(knownGraph.getKnownGraphA());
         var graphB = new MatrixGraph<>(knownGraph.getKnownGraphB());
+        var orderInSession = Utils.getOrderInSession(history);
         profiler.endTick("SI_PRUNE_POST_GRAPH_A_B");
 
         profiler.startTick("SI_PRUNE_POST_GRAPH_C");
@@ -94,8 +91,9 @@ class Pruning {
         }
 
         profiler.startTick("SI_PRUNE_POST_REACHABILITY");
-        var reachability = PruningUtils
-                .reduceEdges(graphA.union(graphC), history).reachability(type);
+        var reachability = Utils
+                .reduceEdges(graphA.union(graphC), orderInSession)
+                .reachability(type);
         profiler.endTick("SI_PRUNE_POST_REACHABILITY");
 
         var solvedConstraints = new ArrayList<SIConstraint<KeyType, ValueType>>();
@@ -167,11 +165,11 @@ class Pruning {
         profiler.startTick("SI_PRUNE_POST_GRAPH_A_B");
         var graphA = new MatrixGraph<>(knownGraph.getKnownGraphA());
         var graphB = new MatrixGraph<>(knownGraph.getKnownGraphB());
+        var orderInSession = Utils.getOrderInSession(history);
         profiler.endTick("SI_PRUNE_POST_GRAPH_A_B");
 
         profiler.startTick("SI_PRUNE_POST_GRAPH_C");
         var graphC = graphA.composition(type, graphB);
-        PruningUtils.reduceEdges(graphC, history);
         profiler.endTick("SI_PRUNE_POST_GRAPH_C");
 
         if (graphC.hasLoops()) {
@@ -179,8 +177,9 @@ class Pruning {
         }
 
         profiler.startTick("SI_PRUNE_POST_REACHABILITY");
-        var reachability = PruningUtils
-                .reduceEdges(graphA.union(graphC), history).reachability(type);
+        var reachability = Utils
+                .reduceEdges(graphA.union(graphC), orderInSession)
+                .reachability(type);
         var RWReachability = reachability.composition(type, graphA);
         profiler.endTick("SI_PRUNE_POST_REACHABILITY");
 
@@ -239,32 +238,4 @@ class Pruning {
 }
 
 class PruningUtils {
-    static <KeyType, ValueType> MatrixGraph<Transaction<KeyType, ValueType>> reduceEdges(
-            MatrixGraph<Transaction<KeyType, ValueType>> graph,
-            History<KeyType, ValueType> history) {
-        var orderInSession = Utils.getOrderInSession(history);
-
-        System.err.printf("Before: %d edges\n", graph.edges().size());
-
-        for (var n : graph.nodes()) {
-            var firstInSession = new HashMap<Session<KeyType, ValueType>, Transaction<KeyType, ValueType>>();
-            for (var m : graph.successors(n)) {
-                var s = m.getSession();
-                if (!firstInSession.containsKey(s)) {
-                    firstInSession.put(s, m);
-                } else {
-                    var o = firstInSession.get(s);
-                    if (orderInSession.get(o) < orderInSession.get(m)) {
-                        graph.removeEdge(n, m);
-                    } else {
-                        firstInSession.put(s, m);
-                        graph.removeEdge(n, o);
-                    }
-                }
-            }
-        }
-
-        System.err.printf("After: %d edges\n", graph.edges().size());
-        return graph;
-    }
 }

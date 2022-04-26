@@ -89,17 +89,20 @@ public class SIVerifier<KeyType, ValueType> {
                 txns.add(e.target());
             });
             conflicts.getRight().forEach(c -> {
-                var addEdges = ((Consumer<List<SIEdge<KeyType, ValueType>>>) s -> s.forEach(e -> {
-                    txns.add(e.from);
-                    txns.add(e.to);
-                }));
+                var addEdges = ((Consumer<List<SIEdge<KeyType, ValueType>>>) s -> s
+                        .forEach(e -> {
+                            txns.add(e.from);
+                            txns.add(e.to);
+                        }));
                 addEdges.accept(c.edges1);
                 addEdges.accept(c.edges2);
             });
             System.err.println("Relevent transactions:");
             txns.forEach(t -> {
-                System.err.printf("sessionid: %d, id: %d\nops:\n", t.getSession().getId(), t.getId());
-                t.getEvents().forEach(e -> System.err.printf("%s %s = %s\n", e.getType(), e.getKey(), e.getValue()));
+                System.err.printf("sessionid: %d, id: %d\nops:\n",
+                        t.getSession().getId(), t.getId());
+                t.getEvents().forEach(e -> System.err.printf("%s %s = %s\n",
+                        e.getType(), e.getKey(), e.getValue()));
             });
         }
 
@@ -249,30 +252,36 @@ class SISolver<KeyType, ValueType> {
 
         profiler.startTick("SI_SOLVER_GEN_GRAPH_A_UNION_C");
         var matA = new MatrixGraph<>(graphA.asGraph());
-        var aUnionC = matA.union(matA.composition("sparse", new MatrixGraph<>(graphB.asGraph())));
+        var aUnionC = matA.union(matA.composition("sparse",
+                new MatrixGraph<>(graphB.asGraph())));
         var orderInSession = Utils.getOrderInSession(history);
-        var firstKnownInSession = aUnionC.nodes().stream()
-            .flatMap(n -> aUnionC.successors(n).stream().map(t -> Pair.of(n, t)))
-            .collect(Collectors.toMap(
-                p -> Pair.of(p.getLeft(), p.getRight().getSession()),
-                Pair::getRight,
-                (u, v) -> orderInSession.get(u) < orderInSession.get(v) ? u : v));
+        var firstKnownInSession = aUnionC.nodes().stream().flatMap(
+                n -> aUnionC.successors(n).stream().map(t -> Pair.of(n, t)))
+                .collect(Collectors.toMap(
+                        p -> Pair.of(p.getLeft(), p.getRight().getSession()),
+                        Pair::getRight,
+                        (u, v) -> orderInSession.get(u) < orderInSession.get(v)
+                                ? u
+                                : v));
 
-        var knownEdges = Utils.getKnownEdges(graphA, graphB, knownLiterals.keySet(), firstKnownInSession);
+        var knownEdges = Utils.getKnownEdges(graphA, graphB,
+                knownLiterals.keySet(), firstKnownInSession, orderInSession);
 
         addConstraints(constraints, graphA, graphB);
-        var unknownEdges = Utils.getUnknownEdges(graphA, graphB, orderInSession, firstKnownInSession);
+        var unknownEdges = Utils.getUnknownEdges(graphA, graphB, orderInSession,
+                firstKnownInSession);
         profiler.endTick("SI_SOLVER_GEN_GRAPH_A_UNION_C");
 
         List.of(Pair.of('A', graphA), Pair.of('B', graphB)).forEach(p -> {
             var g = p.getRight();
             var edgesSize = g.edges().stream()
-                .map(e -> g.edgeValue(e).get().size())
-                .reduce(Integer::sum).orElse(0);
+                    .map(e -> g.edgeValue(e).get().size()).reduce(Integer::sum)
+                    .orElse(0);
             System.err.printf("Graph %s edges count: %d\n", p.getLeft(),
-                edgesSize);
+                    edgesSize);
         });
-        System.err.printf("Graph A union C edges count: %d\n", knownEdges.size() + unknownEdges.size());
+        System.err.printf("Graph A union C edges count: %d\n",
+                knownEdges.size() + unknownEdges.size());
 
         profiler.startTick("SI_SOLVER_GEN_MONO_GRAPH");
         var monoGraph = new monosat.Graph(solver);
@@ -285,8 +294,8 @@ class SISolver<KeyType, ValueType> {
         var addToMonoSAT = ((Consumer<Triple<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>, Lit>>) e -> {
             var n = e.getLeft();
             var s = e.getMiddle();
-            solver.assertEqual(e.getRight(), monoGraph.addEdge(nodeMap.get(n),
-                nodeMap.get(s)));
+            solver.assertEqual(e.getRight(),
+                    monoGraph.addEdge(nodeMap.get(n), nodeMap.get(s)));
         });
 
         knownEdges.forEach(addToMonoSAT);
@@ -421,19 +430,22 @@ class Utils {
             Map<Pair<Transaction<KeyType, ValueType>, Session<KeyType, ValueType>>, Transaction<KeyType, ValueType>> firstKnownInSession) {
         var edges = new ArrayList<Triple<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>, Lit>>();
         var firstKnownOrder = firstKnownInSession.entrySet().stream()
-            .map(e -> Pair.of(e.getKey(), orderInSession.get(e.getValue())))
-            .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
+                .map(e -> Pair.of(e.getKey(), orderInSession.get(e.getValue())))
+                .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
 
         for (var p : graphA.nodes()) {
             for (var n : graphA.successors(p)) {
                 var predEdges = graphA.edgeValue(p, n).get();
-                if (orderInSession.get(n) < firstKnownOrder.getOrDefault(Pair.of(p, n.getSession()), Integer.MAX_VALUE)) {
+                if (orderInSession.get(n) < firstKnownOrder.getOrDefault(
+                        Pair.of(p, n.getSession()), Integer.MAX_VALUE)) {
                     predEdges.forEach(e -> edges.add(Triple.of(p, n, e)));
                 }
 
                 var txns = graphB.successors(n).stream()
-                    .filter(t -> orderInSession.get(t) < firstKnownOrder.getOrDefault(Pair.of(p, t.getSession()), Integer.MAX_VALUE))
-                    .collect(Collectors.toList());
+                        .filter(t -> orderInSession.get(t) < firstKnownOrder
+                                .getOrDefault(Pair.of(p, t.getSession()),
+                                        Integer.MAX_VALUE))
+                        .collect(Collectors.toList());
 
                 for (var s : txns) {
                     var succEdges = graphB.edgeValue(n, s).get();
@@ -448,38 +460,43 @@ class Utils {
     }
 
     static <KeyType, ValueType> List<Triple<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>, Lit>> getKnownEdges(
-        MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> graphA,
-        MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> graphB,
-        Set<Lit> knownLiterals,
-        Map<Pair<Transaction<KeyType, ValueType>, Session<KeyType, ValueType>>, Transaction<KeyType, ValueType>> firstKnownInSession) {
+            MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> graphA,
+            MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> graphB,
+            Set<Lit> knownLiterals,
+            Map<Pair<Transaction<KeyType, ValueType>, Session<KeyType, ValueType>>, Transaction<KeyType, ValueType>> firstKnownInSession,
+            Map<Transaction<KeyType, ValueType>, Integer> orderInSession) {
         var edges = new HashMap<Pair<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>, Lit>();
-        var getKnownEdge = ((TriFunction<MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>>, Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>, Lit>)
-            (g, a, b) -> g.edgeValue(a, b).get()
-            .stream().filter(knownLiterals::contains)
-            .findAny().get());
+        var getKnownEdge = ((TriFunction<MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>>, Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>, Lit>) (
+                g, a, b) -> g.edgeValue(a, b).get().stream()
+                        .filter(knownLiterals::contains).findAny().get());
 
         for (var p : graphA.nodes()) {
             for (var n : graphA.successors(p)) {
-                if (firstKnownInSession.get(Pair.of(p, n.getSession())) == n) {
-                    edges.computeIfAbsent(Pair.of(p, n), k -> getKnownEdge.apply(graphA, p, n));
+                if ((p.getSession() != n.getSession() && firstKnownInSession
+                        .get(Pair.of(p, n.getSession())) == n)
+                        || (p.getSession() == n.getSession() && orderInSession
+                                .get(p) == orderInSession.get(n) + 1)) {
+                    edges.computeIfAbsent(Pair.of(p, n),
+                            k -> getKnownEdge.apply(graphA, p, n));
                 }
 
                 for (var s : graphB.successors(n)) {
-                    if (firstKnownInSession.get(Pair.of(p, s.getSession())) != s) {
+                    if (p.getSession() == s.getSession() || firstKnownInSession
+                            .get(Pair.of(p, s.getSession())) != s) {
                         continue;
                     }
 
-                    edges.computeIfAbsent(Pair.of(p, s), k -> Logic.and(
-                        getKnownEdge.apply(graphA, p, n),
-                        getKnownEdge.apply(graphB, n, s)
-                    ));
+                    edges.computeIfAbsent(Pair.of(p, s),
+                            k -> Logic.and(getKnownEdge.apply(graphA, p, n),
+                                    getKnownEdge.apply(graphB, n, s)));
                 }
             }
         }
 
-        return edges.entrySet().stream()
-            .map(e -> Triple.of(e.getKey().getLeft(), e.getKey().getRight(), e.getValue()))
-            .collect(Collectors.toList());
+        return edges
+                .entrySet().stream().map(e -> Triple.of(e.getKey().getLeft(),
+                        e.getKey().getRight(), e.getValue()))
+                .collect(Collectors.toList());
     }
 
     static <KeyType, ValueType> Map<Transaction<KeyType, ValueType>, Integer> getOrderInSession(
@@ -511,5 +528,36 @@ class Utils {
             g.putEdgeValue(src, dst, new ArrayList<>());
         }
         g.edgeValue(src, dst).get().add(lit);
+    }
+
+    static <KeyType, ValueType> MatrixGraph<Transaction<KeyType, ValueType>> reduceEdges(
+            MatrixGraph<Transaction<KeyType, ValueType>> graph,
+            Map<Transaction<KeyType, ValueType>, Integer> orderInSession) {
+        System.err.printf("Before: %d edges\n", graph.edges().size());
+
+        for (var n : graph.nodes()) {
+            var succ = graph.successors(n);
+            // @formatter:off
+            var firstInSession = succ.stream()
+                .filter(m -> m.getSession() != n.getSession())
+                .collect(Collectors.toMap(
+                    m -> m.getSession(),
+                    Function.identity(),
+                    (p, q) -> orderInSession.get(p)
+                        < orderInSession.get(q) ? p : q));
+
+            succ.stream()
+                .filter(m -> {
+                        if (m.getSession() == n.getSession()) {
+                            return orderInSession.get(m) != orderInSession.get(n) + 1;
+                        }
+                        return m != firstInSession.get(m.getSession());
+                    })
+                .forEach(m -> graph.removeEdge(n, m));
+            // @formatter:on
+        }
+
+        System.err.printf("After: %d edges\n", graph.edges().size());
+        return graph;
     }
 }
