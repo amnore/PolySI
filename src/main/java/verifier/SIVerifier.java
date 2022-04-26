@@ -1,5 +1,6 @@
 package verifier;
 
+import com.google.common.collect.Sets;
 import com.google.common.collect.Streams;
 import com.google.common.graph.*;
 import graph.MatrixGraph;
@@ -68,8 +69,7 @@ public class SIVerifier<KeyType, ValueType> {
             System.err.printf("Loop found in pruning\n");
         }
 
-        var solver = new SISolver<>(history, graph,
-                hasLoop ? Set.of() : constraints);
+        var solver = new SISolver<>(history, graph, constraints);
 
         profiler.startTick("ONESHOT_SOLVE");
         boolean accepted = solver.solve();
@@ -252,24 +252,18 @@ class SISolver<KeyType, ValueType> {
 
         profiler.startTick("SI_SOLVER_GEN_GRAPH_A_UNION_C");
         var matA = new MatrixGraph<>(graphA.asGraph());
-        var aUnionC = matA.union(matA.composition("sparse",
-                new MatrixGraph<>(graphB.asGraph())));
         var orderInSession = Utils.getOrderInSession(history);
-        var firstKnownInSession = aUnionC.nodes().stream().flatMap(
-                n -> aUnionC.successors(n).stream().map(t -> Pair.of(n, t)))
-                .collect(Collectors.toMap(
-                        p -> Pair.of(p.getLeft(), p.getRight().getSession()),
-                        Pair::getRight,
-                        (u, v) -> orderInSession.get(u) < orderInSession.get(v)
-                                ? u
-                                : v));
+        var minimalAUnionC = Utils
+                .reduceEdges(
+                        matA.union(matA.composition("sparse",
+                                new MatrixGraph<>(graphB.asGraph()))),
+                        orderInSession);
+        var reachability = minimalAUnionC.reachability("sparse");
 
-        var knownEdges = Utils.getKnownEdges(graphA, graphB,
-                knownLiterals.keySet(), firstKnownInSession, orderInSession);
+        var knownEdges = Utils.getKnownEdges(graphA, graphB, minimalAUnionC);
 
         addConstraints(constraints, graphA, graphB);
-        var unknownEdges = Utils.getUnknownEdges(graphA, graphB, orderInSession,
-                firstKnownInSession);
+        var unknownEdges = Utils.getUnknownEdges(graphA, graphB, reachability);
         profiler.endTick("SI_SOLVER_GEN_GRAPH_A_UNION_C");
 
         List.of(Pair.of('A', graphA), Pair.of('B', graphB)).forEach(p -> {
@@ -426,25 +420,19 @@ class Utils {
     static <KeyType, ValueType> List<Triple<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>, Lit>> getUnknownEdges(
             MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> graphA,
             MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> graphB,
-            Map<Transaction<KeyType, ValueType>, Integer> orderInSession,
-            Map<Pair<Transaction<KeyType, ValueType>, Session<KeyType, ValueType>>, Transaction<KeyType, ValueType>> firstKnownInSession) {
+            MatrixGraph<Transaction<KeyType, ValueType>> reachability) {
         var edges = new ArrayList<Triple<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>, Lit>>();
-        var firstKnownOrder = firstKnownInSession.entrySet().stream()
-                .map(e -> Pair.of(e.getKey(), orderInSession.get(e.getValue())))
-                .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
 
         for (var p : graphA.nodes()) {
             for (var n : graphA.successors(p)) {
                 var predEdges = graphA.edgeValue(p, n).get();
-                if (orderInSession.get(n) < firstKnownOrder.getOrDefault(
-                        Pair.of(p, n.getSession()), Integer.MAX_VALUE)) {
+
+                if (!reachability.hasEdgeConnecting(p, n)) {
                     predEdges.forEach(e -> edges.add(Triple.of(p, n, e)));
                 }
 
                 var txns = graphB.successors(n).stream()
-                        .filter(t -> orderInSession.get(t) < firstKnownOrder
-                                .getOrDefault(Pair.of(p, t.getSession()),
-                                        Integer.MAX_VALUE))
+                        .filter(t -> !reachability.hasEdgeConnecting(p, t))
                         .collect(Collectors.toList());
 
                 for (var s : txns) {
@@ -462,42 +450,24 @@ class Utils {
     static <KeyType, ValueType> List<Triple<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>, Lit>> getKnownEdges(
             MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> graphA,
             MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> graphB,
-            Set<Lit> knownLiterals,
-            Map<Pair<Transaction<KeyType, ValueType>, Session<KeyType, ValueType>>, Transaction<KeyType, ValueType>> firstKnownInSession,
-            Map<Transaction<KeyType, ValueType>, Integer> orderInSession) {
-        var edges = new HashMap<Pair<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>, Lit>();
-        var getKnownEdge = ((TriFunction<MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>>, Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>, Lit>) (
-                g, a, b) -> g.edgeValue(a, b).get().stream()
-                        .filter(knownLiterals::contains).findAny().get());
+            MatrixGraph<Transaction<KeyType, ValueType>> minimalAUnionC) {
+        return minimalAUnionC.edges().stream().map(e -> {
+            var n = e.source();
+            var m = e.target();
+            var firstEdge = ((Function<Optional<Collection<Lit>>, Lit>) c -> c
+                    .get().iterator().next());
 
-        for (var p : graphA.nodes()) {
-            for (var n : graphA.successors(p)) {
-                if ((p.getSession() != n.getSession() && firstKnownInSession
-                        .get(Pair.of(p, n.getSession())) == n)
-                        || (p.getSession() == n.getSession() && orderInSession
-                                .get(n) <= orderInSession.get(p) + 1)) {
-                    edges.computeIfAbsent(Pair.of(p, n),
-                            k -> getKnownEdge.apply(graphA, p, n));
-                }
-
-                for (var s : graphB.successors(n)) {
-                    if ((p.getSession() == s.getSession()
-                            && orderInSession.get(s) > orderInSession.get(p) + 1)
-                        || firstKnownInSession.get(Pair.of(p, s.getSession())) != s) {
-                        continue;
-                    }
-
-                    edges.computeIfAbsent(Pair.of(p, s),
-                            k -> Logic.and(getKnownEdge.apply(graphA, p, n),
-                                    getKnownEdge.apply(graphB, n, s)));
-                }
+            if (graphA.hasEdgeConnecting(n, m)) {
+                return Triple.of(n, m, firstEdge.apply(graphA.edgeValue(n, m)));
             }
-        }
 
-        return edges
-                .entrySet().stream().map(e -> Triple.of(e.getKey().getLeft(),
-                        e.getKey().getRight(), e.getValue()))
-                .collect(Collectors.toList());
+            var middle = Sets
+                    .intersection(graphA.successors(n), graphB.predecessors(m))
+                    .iterator().next();
+            return Triple.of(n, m,
+                    Logic.and(firstEdge.apply(graphA.edgeValue(n, middle)),
+                            firstEdge.apply(graphB.edgeValue(middle, m))));
+        }).collect(Collectors.toList());
     }
 
     static <KeyType, ValueType> Map<Transaction<KeyType, ValueType>, Integer> getOrderInSession(
@@ -506,7 +476,7 @@ class Utils {
         return history.getSessions().stream()
                 .flatMap(s -> Streams.zip(
                     s.getTransactions().stream(),
-                    IntStream.range(0,s.getTransactions().size()).boxed(),
+                    IntStream.range(0, s.getTransactions().size()).boxed(),
                     Pair::of))
                 .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
         // @formatter:on
@@ -535,30 +505,28 @@ class Utils {
             MatrixGraph<Transaction<KeyType, ValueType>> graph,
             Map<Transaction<KeyType, ValueType>, Integer> orderInSession) {
         System.err.printf("Before: %d edges\n", graph.edges().size());
+        var newGraph = MatrixGraph.ofNodes(graph);
 
         for (var n : graph.nodes()) {
             var succ = graph.successors(n);
             // @formatter:off
             var firstInSession = succ.stream()
-                .filter(m -> m.getSession() != n.getSession())
                 .collect(Collectors.toMap(
                     m -> m.getSession(),
                     Function.identity(),
                     (p, q) -> orderInSession.get(p)
                         < orderInSession.get(q) ? p : q));
 
+            firstInSession.values().forEach(m -> newGraph.putEdge(n, m));
+
             succ.stream()
-                .filter(m -> {
-                        if (m.getSession() == n.getSession()) {
-                            return orderInSession.get(m) != orderInSession.get(n) + 1;
-                        }
-                        return m != firstInSession.get(m.getSession());
-                    })
-                .forEach(m -> graph.removeEdge(n, m));
+                .filter(m -> m.getSession() == n.getSession()
+                        && orderInSession.get(m) == orderInSession.get(n) + 1)
+                .forEach(m -> newGraph.putEdge(n, m));
             // @formatter:on
         }
 
-        System.err.printf("After: %d edges\n", graph.edges().size());
-        return graph;
+        System.err.printf("After: %d edges\n", newGraph.edges().size());
+        return newGraph;
     }
 }

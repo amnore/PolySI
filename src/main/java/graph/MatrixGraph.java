@@ -40,6 +40,10 @@ public class MatrixGraph<T> implements MutableGraph<T> {
         }
     }
 
+    public static <T> MatrixGraph<T> ofNodes(MatrixGraph<T> graph) {
+        return new MatrixGraph<>(graph.nodeMap);
+    }
+
     private MatrixGraph(BiMap<T, Integer> nodes) {
         nodeMap.putAll(nodes);
         adjacency = new long[nodes.size()][(nodes.size() + LONG_BITS - 1)

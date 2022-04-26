@@ -51,6 +51,12 @@ class Pruning {
 
             if (result.getRight()) {
                 profiler.endTick("SI_PRUNE");
+                System.err.printf(
+                        "Pruned %d rounds, solved %d constraints\n"
+                                + "After prune: graphA: %d, graphB: %d\n",
+                        rounds, solvedConstraints,
+                        knownGraph.getKnownGraphA().edges().size(),
+                        knownGraph.getKnownGraphB().edges().size());
                 return true;
             } else if (result.getLeft() == 0) {
                 break;
@@ -60,7 +66,6 @@ class Pruning {
             rounds++;
         }
         profiler.endTick("SI_PRUNE");
-
         System.err.printf(
                 "Pruned %d rounds, solved %d constraints\n"
                         + "After prune: graphA: %d, graphB: %d\n",
