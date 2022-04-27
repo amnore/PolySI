@@ -1,10 +1,11 @@
 import java.nio.file.Path;
 import java.util.concurrent.Callable;
 
+import history.Event;
+import history.Event.EventType;
 import history.History;
 import history.HistoryLoader;
 import history.HistoryParser;
-import history.History.EventType;
 import history.loaders.CobraHistoryLoader;
 import history.loaders.DBCopHistoryLoader;
 import picocli.CommandLine;
@@ -118,8 +119,8 @@ class Stat implements Callable<Integer> {
         System.out.printf(
                 "Sessions: %d\n" + "Transactions: %d\n" + "Events: total %d, read %d, write %d\n" + "Variables: %d\n",
                 history.getSessions().size(), history.getTransactions().size(), events.size(),
-                events.stream().filter(e -> e.getType() == History.EventType.READ).count(),
-                events.stream().filter(e -> e.getType() == History.EventType.WRITE).count(),
+                events.stream().filter(e -> e.getType() == Event.EventType.READ).count(),
+                events.stream().filter(e -> e.getType() == Event.EventType.WRITE).count(),
                 events.stream().map(e -> e.getKey()).distinct().count());
 
         return 0;
@@ -145,7 +146,7 @@ class Dump implements Callable<Integer> {
                 var events = txns.get(i).getEvents();
                 for (var j = 0; j < events.size(); j++) {
                     var ev = events.get(j);
-                    System.out.printf("%c(%s, %s, %d, %d, %d)\n", ev.getType() == EventType.WRITE ? 'W' : 'R',
+                    System.out.printf("%c(%s, %s, %d, %d, %d)\n", ev.getType() == Event.EventType.WRITE ? 'W' : 'R',
                             ev.getKey(), ev.getValue(), session.getId(), i, j);
                 }
             }

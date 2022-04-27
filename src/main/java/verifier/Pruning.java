@@ -2,8 +2,9 @@ package verifier;
 
 import graph.PrecedenceGraph;
 import history.History;
-import history.History.Transaction;
 import util.Profiler;
+import graph.Edge;
+import graph.EdgeType;
 import graph.MatrixGraph;
 import java.util.Collection;
 import java.util.ArrayList;
@@ -82,8 +83,8 @@ class Pruning {
         var profiler = Profiler.getInstance();
 
         profiler.startTick("SI_PRUNE_POST_GRAPH_A_B");
-        var graphA = new MatrixGraph<>(knownGraph.getKnownGraphA());
-        var graphB = new MatrixGraph<>(knownGraph.getKnownGraphB());
+        var graphA = new MatrixGraph<>(knownGraph.getKnownGraphA().asGraph());
+        var graphB = new MatrixGraph<>(knownGraph.getKnownGraphB().asGraph());
         var orderInSession = Utils.getOrderInSession(history);
         profiler.endTick("SI_PRUNE_POST_GRAPH_A_B");
 
@@ -128,6 +129,9 @@ class Pruning {
                             }
                         }
                         break;
+                    default:
+                        throw new Error(
+                                "only WW and RW edges should appear in constraints");
                     }
                 }
 
@@ -135,11 +139,16 @@ class Pruning {
                     for (var e : other) {
                         switch (e.getType()) {
                         case WW:
-                            knownGraph.putEdgeToGraphA(e.getFrom(), e.getTo());
+                            knownGraph.putEdge(e.getFrom(), e.getTo(),
+                                    new Edge<KeyType>(EdgeType.WW, e.getKey()));
                             break;
                         case RW:
-                            knownGraph.putEdgeToGraphB(e.getFrom(), e.getTo());
+                            knownGraph.putEdge(e.getFrom(), e.getTo(),
+                                    new Edge<KeyType>(EdgeType.RW, e.getKey()));
                             break;
+                        default:
+                            throw new Error(
+                                    "only WW and RW edges should appear in constraints");
                         }
                     }
                 }
@@ -168,8 +177,8 @@ class Pruning {
         var profiler = Profiler.getInstance();
 
         profiler.startTick("SI_PRUNE_POST_GRAPH_A_B");
-        var graphA = new MatrixGraph<>(knownGraph.getKnownGraphA());
-        var graphB = new MatrixGraph<>(knownGraph.getKnownGraphB());
+        var graphA = new MatrixGraph<>(knownGraph.getKnownGraphA().asGraph());
+        var graphB = new MatrixGraph<>(knownGraph.getKnownGraphB().asGraph());
         var orderInSession = Utils.getOrderInSession(history);
         profiler.endTick("SI_PRUNE_POST_GRAPH_A_B");
 
@@ -218,11 +227,16 @@ class Pruning {
                     for (var e : other) {
                         switch (e.getType()) {
                         case WW:
-                            knownGraph.putEdgeToGraphA(e.getFrom(), e.getTo());
+                            knownGraph.putEdge(e.getFrom(), e.getTo(),
+                                    new Edge<KeyType>(EdgeType.WW, e.getKey()));
                             break;
                         case RW:
-                            knownGraph.putEdgeToGraphB(e.getFrom(), e.getTo());
+                            knownGraph.putEdge(e.getFrom(), e.getTo(),
+                                    new Edge<KeyType>(EdgeType.RW, e.getKey()));
                             break;
+                        default:
+                            throw new Error(
+                                    "only WW and RW edges should appear in constraints");
                         }
                     }
                 }

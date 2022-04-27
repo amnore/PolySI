@@ -1,6 +1,8 @@
+import history.Event;
 import history.History;
 import history.HistoryLoader;
 import lombok.AllArgsConstructor;
+
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
 
@@ -13,7 +15,7 @@ import java.util.stream.Collectors;
 public class TestLoader implements HistoryLoader<String, Integer> {
 	final Set<Integer> sessions;
 	final Map<Integer, List<Integer>> transactions;
-	final Map<Integer, List<Triple<History.EventType, String, Integer>>> events;
+	final Map<Integer, List<Triple<Event.EventType, String, Integer>>> events;
 
 	@Override
 	public History<String, Integer> loadHistory() {

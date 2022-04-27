@@ -9,8 +9,8 @@ import java.util.stream.Stream;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
 
+import history.Event;
 import history.History;
-import history.History.Event;
 
 class Utils {
 	static <T> HashMap<T, Long> getIdMap(Stream<T> keys, long beginId) {

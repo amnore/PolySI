@@ -1,6 +1,6 @@
 package history.loaders;
 
-import static history.History.EventType.*;
+import static history.Event.EventType.*;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -77,7 +77,7 @@ public class CobraHistoryLoader implements HistoryParser<Long, CobraHistoryLoade
 
 		// check all transactions except init are committed
 		for (var txn : history.getTransactions()) {
-			if (txn != initTxn && txn.getStatus() != TransactionStatus.COMMIT) {
+			if (txn != initTxn && txn.getStatus() != Transaction.TransactionStatus.COMMIT) {
 				throw new InvalidHistoryError();
 			}
 		}
@@ -122,7 +122,7 @@ public class CobraHistoryLoader implements HistoryParser<Long, CobraHistoryLoade
 				// 2. never seen: new TxnNode & continue
 				if ((current = history.getTransaction(id)) == null) {
 					current = history.addTransaction(session, id);
-				} else if (current.getStatus() != TransactionStatus.ONGOING || current.getEvents().size() != 0) {
+				} else if (current.getStatus() != Transaction.TransactionStatus.ONGOING || current.getEvents().size() != 0) {
 					throw new InvalidHistoryError();
 				}
 				break;
@@ -131,7 +131,7 @@ public class CobraHistoryLoader implements HistoryParser<Long, CobraHistoryLoade
 				// TxnCommit
 				var id = in.readLong();
 				assert current != null && current.getId() == id;
-				current.setStatus(TransactionStatus.COMMIT);
+				current.setStatus(Transaction.TransactionStatus.COMMIT);
 				break;
 			}
 			case 'W': {

@@ -3,12 +3,16 @@ package verifier;
 import com.google.common.collect.Sets;
 import com.google.common.collect.Streams;
 import com.google.common.graph.*;
+
+import graph.Edge;
+import graph.EdgeType;
 import graph.MatrixGraph;
 import graph.PrecedenceGraph;
+import history.Event;
 import history.History;
-import history.History.Session;
-import history.History.Transaction;
 import history.HistoryLoader;
+import history.Transaction;
+
 import java.util.*;
 import java.util.function.*;
 import java.util.stream.Collectors;
@@ -16,13 +20,14 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.ToString;
 import monosat.Lit;
 import monosat.Logic;
 import monosat.Solver;
-import org.apache.commons.lang3.function.TriFunction;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
 import util.Profiler;
+import util.TriConsumer;
 
 @SuppressWarnings("UnstableApiUsage")
 public class SIVerifier<KeyType, ValueType> {
@@ -85,8 +90,8 @@ public class SIVerifier<KeyType, ValueType> {
 
             var txns = new HashSet<Transaction<KeyType, ValueType>>();
             conflicts.getLeft().forEach(e -> {
-                txns.add(e.source());
-                txns.add(e.target());
+                txns.add(e.getLeft().source());
+                txns.add(e.getLeft().target());
             });
             conflicts.getRight().forEach(c -> {
                 var addEdges = ((Consumer<List<SIEdge<KeyType, ValueType>>>) s -> s
@@ -125,37 +130,38 @@ public class SIVerifier<KeyType, ValueType> {
      * 2. C precedes A, add C ->(ww) A. For each transaction B such that C
      * ->(wr, K) A, add B ->(rw) A.
      */
-    private Set<SIConstraint<KeyType, ValueType>> generateConstraints(
+    private static <KeyType, ValueType> Set<SIConstraint<KeyType, ValueType>> generateConstraints(
             History<KeyType, ValueType> history,
             PrecedenceGraph<KeyType, ValueType> graph) {
         var readFrom = graph.getReadFrom();
         var writes = new HashMap<KeyType, Set<Transaction<KeyType, ValueType>>>();
 
         history.getEvents().stream()
-                .filter(e -> e.getType() == History.EventType.WRITE)
+                .filter(e -> e.getType() == Event.EventType.WRITE)
                 .forEach(ev -> {
                     writes.computeIfAbsent(ev.getKey(), k -> new HashSet<>())
                             .add(ev.getTransaction());
                 });
 
-        var forEachWriteSameKey = ((Consumer<BiConsumer<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>>) f -> {
-            for (var txns : writes.values()) {
-                var list = new ArrayList<>(txns);
+        var forEachWriteSameKey = ((Consumer<TriConsumer<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>, KeyType>>) f -> {
+            for (var p : writes.entrySet()) {
+                var key = p.getKey();
+                var list = new ArrayList<>(p.getValue());
                 for (int i = 0; i < list.size(); i++) {
                     for (int j = i + 1; j < list.size(); j++) {
-                        f.accept(list.get(i), list.get(j));
+                        f.accept(list.get(i), list.get(j), key);
                     }
                 }
             }
         });
 
         var constraintEdges = new HashMap<Pair<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>, List<SIEdge<KeyType, ValueType>>>();
-        forEachWriteSameKey.accept((a, c) -> {
+        forEachWriteSameKey.accept((a, c, key) -> {
             var addEdge = ((BiConsumer<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>) (
                     m, n) -> {
                 constraintEdges
                         .computeIfAbsent(Pair.of(m, n), p -> new ArrayList<>())
-                        .add(new SIEdge<>(m, n, EdgeType.WW));
+                        .add(new SIEdge<>(m, n, EdgeType.WW, key));
             });
             addEdge.accept(a, c);
             addEdge.accept(c, a);
@@ -163,21 +169,21 @@ public class SIVerifier<KeyType, ValueType> {
 
         for (var a : history.getTransactions()) {
             for (var b : readFrom.successors(a)) {
-                for (var key : readFrom.edgeValue(a, b).get()) {
-                    for (var c : writes.get(key)) {
+                for (var edge : readFrom.edgeValue(a, b).get()) {
+                    for (var c : writes.get(edge.getKey())) {
                         if (a == c || b == c) {
                             continue;
                         }
 
                         constraintEdges.get(Pair.of(a, c))
-                                .add(new SIEdge<>(b, c, EdgeType.RW));
+                                .add(new SIEdge<>(b, c, EdgeType.RW, edge.getKey()));
                     }
                 }
             }
         }
 
         var constraints = new HashSet<SIConstraint<KeyType, ValueType>>();
-        forEachWriteSameKey.accept((a, c) -> constraints
+        forEachWriteSameKey.accept((a, c, key) -> constraints
                 .add(new SIConstraint<>(constraintEdges.get(Pair.of(a, c)),
                         constraintEdges.get(Pair.of(c, a)), a, c)));
 
@@ -191,7 +197,7 @@ class SISolver<KeyType, ValueType> {
     final Solver solver = new Solver();
 
     // The literals of the known graph
-    final Map<Lit, EndpointPair<Transaction<KeyType, ValueType>>> knownLiterals = new HashMap<>();
+    final Map<Lit, Pair<EndpointPair<Transaction<KeyType, ValueType>>, Collection<Edge<KeyType>>>> knownLiterals = new HashMap<>();
 
     // The literals asserting that exactly one set of edges exists in the graph
     // for each constraint
@@ -206,8 +212,8 @@ class SISolver<KeyType, ValueType> {
         return solver.solve(lits);
     }
 
-    Pair<Collection<EndpointPair<Transaction<KeyType, ValueType>>>, Collection<SIConstraint<KeyType, ValueType>>> getConflicts() {
-        var edges = new ArrayList<EndpointPair<Transaction<KeyType, ValueType>>>();
+    Pair<Collection<Pair<EndpointPair<Transaction<KeyType, ValueType>>, Collection<Edge<KeyType>>>>, Collection<SIConstraint<KeyType, ValueType>>> getConflicts() {
+        var edges = new ArrayList<Pair<EndpointPair<Transaction<KeyType, ValueType>>, Collection<Edge<KeyType>>>>();
         var constraints = new ArrayList<SIConstraint<KeyType, ValueType>>();
 
         solver.getConflictClause().stream().map(Logic::not).forEach(lit -> {
@@ -301,11 +307,11 @@ class SISolver<KeyType, ValueType> {
 
     private MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> createKnownGraph(
             History<KeyType, ValueType> history,
-            Graph<Transaction<KeyType, ValueType>> knownGraph) {
+            ValueGraph<Transaction<KeyType, ValueType>, Collection<Edge<KeyType>>> knownGraph) {
         var g = Utils.createEmptyGraph(history);
         for (var e : knownGraph.edges()) {
             var lit = new Lit(solver);
-            knownLiterals.put(lit, e);
+            knownLiterals.put(lit, Pair.of(e, knownGraph.edgeValue(e).get()));
             Utils.addEdge(g, e.source(), e.target(), lit);
         }
 
@@ -345,15 +351,17 @@ class SISolver<KeyType, ValueType> {
     }
 }
 
-enum EdgeType {
-    WW, RW
-}
-
 @Data
 class SIEdge<KeyType, ValueType> {
     final Transaction<KeyType, ValueType> from;
     final Transaction<KeyType, ValueType> to;
     final EdgeType type;
+    final KeyType key;
+
+    @Override
+    public String toString() {
+        return String.format("(%s -> %s, %s, %s)", from, to, type, key);
+    }
 }
 
 @Data
@@ -361,14 +369,19 @@ class SIEdge<KeyType, ValueType> {
 class SIConstraint<KeyType, ValueType> {
 
     // writeTransaction1 -> writeTransaction2
+    @ToString.Include(rank = 1)
     final List<SIEdge<KeyType, ValueType>> edges1;
 
     // writeTransaction2 -> writeTransaction1
+    @ToString.Include(rank = 0)
     final List<SIEdge<KeyType, ValueType>> edges2;
 
     @EqualsAndHashCode.Include
+    @ToString.Include(rank = 3)
     final Transaction<KeyType, ValueType> writeTransaction1;
+
     @EqualsAndHashCode.Include
+    @ToString.Include(rank = 2)
     final Transaction<KeyType, ValueType> writeTransaction2;
 }
 
@@ -376,7 +389,7 @@ class Utils {
     static <KeyType, ValueType> boolean verifyInternalConsistency(
             History<KeyType, ValueType> history) {
         var writes = new HashMap<Pair<KeyType, ValueType>, Pair<Transaction<KeyType, ValueType>, Integer>>();
-        var getEvents = ((Function<History.EventType, Stream<Pair<Integer, History.Event<KeyType, ValueType>>>>) type -> history
+        var getEvents = ((Function<Event.EventType, Stream<Pair<Integer, Event<KeyType, ValueType>>>>) type -> history
                 .getTransactions().stream().flatMap(txn -> {
                     var events = txn.getEvents();
                     return IntStream.range(0, events.size())
@@ -384,14 +397,14 @@ class Utils {
                             .filter(p -> p.getRight().getType() == type);
                 }));
 
-        getEvents.apply(History.EventType.WRITE).forEach(p -> {
+        getEvents.apply(Event.EventType.WRITE).forEach(p -> {
             var i = p.getLeft();
             var ev = p.getRight();
             writes.put(Pair.of(ev.getKey(), ev.getValue()),
                     Pair.of(ev.getTransaction(), i));
         });
 
-        for (var p : getEvents.apply(History.EventType.READ)
+        for (var p : getEvents.apply(Event.EventType.READ)
                 .collect(Collectors.toList())) {
             var i = p.getLeft();
             var ev = p.getRight();
@@ -431,8 +444,8 @@ class Utils {
                     predEdges.forEach(e -> edges.add(Triple.of(p, n, e)));
                 }
 
-                var txns = graphB.successors(n).stream()
-                        .filter(t -> p == t || !reachability.hasEdgeConnecting(p, t))
+                var txns = graphB.successors(n).stream().filter(
+                        t -> p == t || !reachability.hasEdgeConnecting(p, t))
                         .collect(Collectors.toList());
 
                 for (var s : txns) {

@@ -1,7 +1,7 @@
 package history.loaders;
 
-import static history.History.EventType.READ;
-import static history.History.EventType.WRITE;
+import static history.Event.EventType.READ;
+import static history.Event.EventType.WRITE;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -112,7 +112,7 @@ public class DBCopHistoryLoader implements HistoryParser<Long, Long> {
 		@SneakyThrows
 		void parseTransaction(Session<Long, Long> session) {
 			var length = in.readLong();
-			var events = new ArrayList<Triple<History.EventType, Long, Long>>();
+			var events = new ArrayList<Triple<Event.EventType, Long, Long>>();
 			for (long i = 0; i < length; i++) {
 				var write = in.readBoolean();
 				var key = in.readLong();
