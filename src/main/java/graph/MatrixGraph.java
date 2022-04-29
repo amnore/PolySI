@@ -60,9 +60,6 @@ public class MatrixGraph<T> implements MutableGraph<T> {
 
     private MatrixGraph<T> floyd() {
         var result = new MatrixGraph<>(this);
-        for (var i = 0; i < adjacency.length; i++) {
-            result.set(i, i);
-        }
 
         for (var k = 0; k < adjacency.length; k++) {
             for (var i = 0; i < adjacency.length; i++) {
@@ -84,11 +81,9 @@ public class MatrixGraph<T> implements MutableGraph<T> {
 
         for (var i = topoOrder.size() - 1; i >= 0; i--) {
             var n = topoOrder.get(i);
-            result.set(n, n);
 
             for (var j : successorIds(n).toArray()) {
                 assert topoOrder.indexOf(j) > i;
-                assert result.get(j, j);
                 result.set(n, j);
                 for (var k = 0; k < adjacency[0].length; k++) {
                     result.adjacency[n][k] |= result.adjacency[j][k];
@@ -111,7 +106,6 @@ public class MatrixGraph<T> implements MutableGraph<T> {
             var q = new ArrayDeque<Integer>();
 
             q.add(i);
-            result.set(i, i);
             while (!q.isEmpty()) {
                 var j = q.pop();
 

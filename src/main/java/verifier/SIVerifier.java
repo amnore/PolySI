@@ -445,7 +445,7 @@ class Utils {
                 }
 
                 var txns = graphB.successors(n).stream().filter(
-                        t -> p == t || !reachability.hasEdgeConnecting(p, t))
+                        t -> !reachability.hasEdgeConnecting(p, t))
                         .collect(Collectors.toList());
 
                 for (var s : txns) {
