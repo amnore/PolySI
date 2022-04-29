@@ -141,13 +141,12 @@ class Dump implements Callable<Integer> {
         var history = loader.loadHistory();
 
         for (var session : history.getSessions()) {
-            var txns = session.getTransactions();
-            for (var i = 0; i < txns.size(); i++) {
-                var events = txns.get(i).getEvents();
+            for (var txn : session.getTransactions()) {
+                var events = txn.getEvents();
                 for (var j = 0; j < events.size(); j++) {
                     var ev = events.get(j);
                     System.out.printf("%c(%s, %s, %d, %d, %d)\n", ev.getType() == Event.EventType.WRITE ? 'W' : 'R',
-                            ev.getKey(), ev.getValue(), session.getId(), i, j);
+                            ev.getKey(), ev.getValue(), session.getId(), txn.getId(), j);
                 }
             }
         }
