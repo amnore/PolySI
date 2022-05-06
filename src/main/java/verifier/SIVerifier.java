@@ -175,8 +175,8 @@ public class SIVerifier<KeyType, ValueType> {
                             continue;
                         }
 
-                        constraintEdges.get(Pair.of(a, c))
-                                .add(new SIEdge<>(b, c, EdgeType.RW, edge.getKey()));
+                        constraintEdges.get(Pair.of(a, c)).add(
+                                new SIEdge<>(b, c, EdgeType.RW, edge.getKey()));
                     }
                 }
             }
@@ -269,7 +269,7 @@ class SISolver<KeyType, ValueType> {
         var knownEdges = Utils.getKnownEdges(graphA, graphB, minimalAUnionC);
 
         addConstraints(constraints, graphA, graphB);
-        var unknownEdges = Utils.getUnknownEdges(graphA, graphB, reachability);
+        var unknownEdges = Utils.getUnknownEdges(graphA, graphB, reachability, solver);
         profiler.endTick("SI_SOLVER_GEN_GRAPH_A_UNION_C");
 
         List.of(Pair.of('A', graphA), Pair.of('B', graphB)).forEach(p -> {
@@ -328,8 +328,13 @@ class SISolver<KeyType, ValueType> {
             Lit all = Lit.True, none = Lit.True;
             for (var e : edges) {
                 var lit = new Lit(solver);
+                var not = Logic.not(lit);
                 all = Logic.and(all, lit);
-                none = Logic.and(none, Logic.not(lit));
+                none = Logic.and(none, not);
+                solver.setDecisionLiteral(lit, false);
+                solver.setDecisionLiteral(not, false);
+                solver.setDecisionLiteral(all, false);
+                solver.setDecisionLiteral(none, false);
 
                 if (e.getType().equals(EdgeType.WW)) {
                     Utils.addEdge(graphA, e.from, e.to, lit);
@@ -433,7 +438,8 @@ class Utils {
     static <KeyType, ValueType> List<Triple<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>, Lit>> getUnknownEdges(
             MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> graphA,
             MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> graphB,
-            MatrixGraph<Transaction<KeyType, ValueType>> reachability) {
+            MatrixGraph<Transaction<KeyType, ValueType>> reachability,
+            Solver solver) {
         var edges = new ArrayList<Triple<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>, Lit>>();
 
         for (var p : graphA.nodes()) {
@@ -444,14 +450,16 @@ class Utils {
                     predEdges.forEach(e -> edges.add(Triple.of(p, n, e)));
                 }
 
-                var txns = graphB.successors(n).stream().filter(
-                        t -> !reachability.hasEdgeConnecting(p, t))
+                var txns = graphB.successors(n).stream()
+                        .filter(t -> !reachability.hasEdgeConnecting(p, t))
                         .collect(Collectors.toList());
 
                 for (var s : txns) {
                     var succEdges = graphB.edgeValue(n, s).get();
                     predEdges.forEach(e1 -> succEdges.forEach(e2 -> {
-                        edges.add(Triple.of(p, s, Logic.and(e1, e2)));
+                        var lit = Logic.and(e1, e2);
+                        solver.setDecisionLiteral(lit, false);
+                        edges.add(Triple.of(p, s, lit));
                     }));
                 }
             }
