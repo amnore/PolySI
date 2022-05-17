@@ -1,3 +1,4 @@
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.Callable;
 
@@ -8,6 +9,7 @@ import history.HistoryLoader;
 import history.HistoryParser;
 import history.loaders.CobraHistoryLoader;
 import history.loaders.DBCopHistoryLoader;
+import lombok.SneakyThrows;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -19,6 +21,7 @@ import verifier.SIVerifier;
 @Command(name = "verifier", mixinStandardHelpOptions = true, version = "verifier 0.0.1", subcommands = { Audit.class,
         Convert.class, Stat.class, Dump.class })
 public class Main implements Callable<Integer> {
+    @SneakyThrows
     public static void main(String[] args) {
         var cmd = new CommandLine(new Main());
         cmd.setCaseInsensitiveEnumValuesAllowed(true);
