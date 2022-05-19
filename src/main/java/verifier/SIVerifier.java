@@ -102,7 +102,7 @@ public class SIVerifier<KeyType, ValueType> {
                 addEdges.accept(c.edges1);
                 addEdges.accept(c.edges2);
             });
-            System.err.println("Relevent transactions:");
+            System.err.println("Related transactions:");
             txns.forEach(t -> {
                 System.err.printf("sessionid: %d, id: %d\nops:\n",
                         t.getSession().getId(), t.getId());
