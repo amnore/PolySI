@@ -58,24 +58,6 @@ public class MatrixGraph<T> implements MutableGraph<T> {
         }
     }
 
-    private MatrixGraph<T> floyd() {
-        var result = new MatrixGraph<>(this);
-
-        for (var k = 0; k < adjacency.length; k++) {
-            for (var i = 0; i < adjacency.length; i++) {
-                if (!result.get(i, k)) {
-                    continue;
-                }
-
-                for (var j = 0; j < adjacency[0].length; j++) {
-                    result.adjacency[i][j] |= result.adjacency[k][j];
-                }
-            }
-        }
-
-        return result;
-    }
-
     private MatrixGraph<T> bfsWithNoCycle(List<Integer> topoOrder) {
         var result = new MatrixGraph<T>(nodeMap);
 
@@ -123,15 +105,8 @@ public class MatrixGraph<T> implements MutableGraph<T> {
         return result;
     }
 
-    public MatrixGraph<T> reachability(String type) {
-        switch (type) {
-        case "sparse":
-            return allNodesBfs();
-        case "dense":
-            return floyd();
-        default:
-            throw new RuntimeException(String.format("unknown type %s", type));
-        }
+    public MatrixGraph<T> reachability() {
+        return allNodesBfs();
     }
 
     private MatrixGraph<T> matrixProduct(MatrixGraph<T> other) {
@@ -153,32 +128,8 @@ public class MatrixGraph<T> implements MutableGraph<T> {
         return result;
     }
 
-    private MatrixGraph<T> sparseComposition(MatrixGraph<T> other) {
-        assert nodeMap.equals(other.nodeMap);
-
-        var result = new MatrixGraph<>(nodeMap);
-        var a = toSparseGraph();
-        var b = other.toSparseGraph();
-        for (var i = 0; i < adjacency.length; i++) {
-            for (var j : a.predecessors(i)) {
-                for (var k : b.successors(i)) {
-                    result.set(j, k);
-                }
-            }
-        }
-
-        return result;
-    }
-
-    public MatrixGraph<T> composition(String type, MatrixGraph<T> other) {
-        switch (type) {
-        case "sparse":
-            // return sparseComposition(other);
-        case "dense":
-            return matrixProduct(other);
-        default:
-            throw new RuntimeException(String.format("invalid type %s", type));
-        }
+    public MatrixGraph<T> composition(MatrixGraph<T> other) {
+        return matrixProduct(other);
     }
 
     public MatrixGraph<T> union(MatrixGraph<T> other) {

@@ -68,7 +68,7 @@ public class SIVerifier<KeyType, ValueType> {
                         .reduce(Integer::sum).orElse(0));
         profiler.endTick("ONESHOT_CONS");
 
-        var hasLoop = Pruning.pruneConstraints("Post-BFS", graph, constraints,
+        var hasLoop = Pruning.pruneConstraints(graph, constraints,
                 history);
         if (hasLoop) {
             System.err.printf("Loop found in pruning\n");
@@ -261,10 +261,10 @@ class SISolver<KeyType, ValueType> {
         var orderInSession = Utils.getOrderInSession(history);
         var minimalAUnionC = Utils
                 .reduceEdges(
-                        matA.union(matA.composition("sparse",
-                                new MatrixGraph<>(graphB.asGraph()))),
+                        matA.union(matA.composition(
+                            new MatrixGraph<>(graphB.asGraph()))),
                         orderInSession);
-        var reachability = minimalAUnionC.reachability("sparse");
+        var reachability = minimalAUnionC.reachability();
 
         var knownEdges = Utils.getKnownEdges(graphA, graphB, minimalAUnionC);
 

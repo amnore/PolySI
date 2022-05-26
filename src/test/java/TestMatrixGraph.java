@@ -46,11 +46,11 @@ class TestMatrixGraph {
         System.err.printf("density: %g\n", density);
 
         var t = Stopwatch.createStarted();
-        var sparse = g.composition("sparse", g);
+        var sparse = g.composition(g);
         System.err.printf("sparse: %s\n", t.elapsed());
 
         t = Stopwatch.createStarted();
-        var dense = g.composition("dense", g);
+        var dense = g.composition(g);
         System.err.printf("dense: %s\n", t.elapsed());
 
         assertEquals(sparse, dense);
@@ -64,11 +64,11 @@ class TestMatrixGraph {
         System.err.printf("density: %g\n", density);
 
         var t = Stopwatch.createStarted();
-        var sparse = g.reachability("sparse");
+        var sparse = g.reachability();
         System.err.printf("sparse: %s\n", t.elapsed());
 
         t = Stopwatch.createStarted();
-        var dense = g.reachability("dense");
+        var dense = g.reachability();
         System.err.printf("dense: %s\n", t.elapsed());
 
         assertEquals(sparse, dense);

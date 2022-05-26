@@ -9,49 +9,24 @@ import graph.EdgeType;
 import graph.MatrixGraph;
 import java.util.Collection;
 import java.util.ArrayList;
-import java.util.function.BiFunction;
-import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 class Pruning {
-    static <KeyType, ValueType> boolean pruneConstraints(String method,
-            PrecedenceGraph<KeyType, ValueType> knownGraph,
-            Collection<SIConstraint<KeyType, ValueType>> constraints,
-            History<KeyType, ValueType> history) {
+    static <KeyType, ValueType> boolean pruneConstraints(PrecedenceGraph<KeyType, ValueType> knownGraph,
+                                                         Collection<SIConstraint<KeyType, ValueType>> constraints,
+                                                         History<KeyType, ValueType> history) {
         var profiler = Profiler.getInstance();
-        var pruneFunc = ((BiFunction<PrecedenceGraph<KeyType, ValueType>, Collection<SIConstraint<KeyType, ValueType>>, Pair<Integer, Boolean>>) null);
-
-        switch (method) {
-        case "Post-BFS":
-            pruneFunc = (g, c) -> pruneConstraintsWithPostChecking("sparse", g,
-                    c, history);
-            break;
-        case "Post-Floyd":
-            pruneFunc = (g, c) -> pruneConstraintsWithPostChecking("dense", g,
-                    c, history);
-            break;
-        case "Pre-BFS":
-            pruneFunc = (g, c) -> pruneConstraintsWithPreprocessing("sparse", g,
-                    c, history);
-            break;
-        case "Pre-Floyd":
-            pruneFunc = (g, c) -> pruneConstraintsWithPreprocessing("dense", g,
-                    c, history);
-            break;
-        }
 
         profiler.startTick("SI_PRUNE");
         int rounds = 1, solvedConstraints = 0;
         while (true) {
             System.err.printf("Pruning round %d\n", rounds);
-            var result = pruneFunc.apply(knownGraph, constraints);
+            var result = pruneConstraintsWithPostChecking(knownGraph, constraints, history);
 
             if (result.getRight()) {
                 profiler.endTick("SI_PRUNE");
@@ -80,7 +55,7 @@ class Pruning {
     }
 
     private static <KeyType, ValueType> Pair<Integer, Boolean> pruneConstraintsWithPostChecking(
-            String type, PrecedenceGraph<KeyType, ValueType> knownGraph,
+            PrecedenceGraph<KeyType, ValueType> knownGraph,
             Collection<SIConstraint<KeyType, ValueType>> constraints,
             History<KeyType, ValueType> history) {
         var profiler = Profiler.getInstance();
@@ -92,7 +67,7 @@ class Pruning {
         profiler.endTick("SI_PRUNE_POST_GRAPH_A_B");
 
         profiler.startTick("SI_PRUNE_POST_GRAPH_C");
-        var graphC = graphA.composition(type, graphB);
+        var graphC = graphA.composition(graphB);
         profiler.endTick("SI_PRUNE_POST_GRAPH_C");
 
         if (graphC.hasLoops()) {
@@ -102,7 +77,7 @@ class Pruning {
         profiler.startTick("SI_PRUNE_POST_REACHABILITY");
         var reachability = Utils
                 .reduceEdges(graphA.union(graphC), orderInSession)
-                .reachability(type);
+                .reachability();
         profiler.endTick("SI_PRUNE_POST_REACHABILITY");
 
         var solvedConstraints = new ArrayList<SIConstraint<KeyType, ValueType>>();
@@ -134,63 +109,6 @@ class Pruning {
         // constraints.removeAll(solvedConstraints);
         // java removeAll has performance bugs; do it manually
         solvedConstraints.forEach(constraints::remove);
-        return Pair.of(solvedConstraints.size(), false);
-    }
-
-    private static <KeyType, ValueType> Pair<Integer, Boolean> pruneConstraintsWithPreprocessing(
-            String type, PrecedenceGraph<KeyType, ValueType> knownGraph,
-            Collection<SIConstraint<KeyType, ValueType>> constraints,
-            History<KeyType, ValueType> history) {
-        var profiler = Profiler.getInstance();
-
-        profiler.startTick("SI_PRUNE_POST_GRAPH_A_B");
-        var graphA = new MatrixGraph<>(knownGraph.getKnownGraphA().asGraph());
-        var graphB = new MatrixGraph<>(knownGraph.getKnownGraphB().asGraph());
-        var orderInSession = Utils.getOrderInSession(history);
-        profiler.endTick("SI_PRUNE_POST_GRAPH_A_B");
-
-        profiler.startTick("SI_PRUNE_POST_GRAPH_C");
-        var graphC = graphA.composition(type, graphB);
-        profiler.endTick("SI_PRUNE_POST_GRAPH_C");
-
-        if (graphC.hasLoops()) {
-            return Pair.of(0, true);
-        }
-
-        profiler.startTick("SI_PRUNE_POST_REACHABILITY");
-        var reachability = Utils
-                .reduceEdges(graphA.union(graphC), orderInSession)
-                .reachability(type);
-        var RWReachability = reachability.composition(type, graphA);
-        profiler.endTick("SI_PRUNE_POST_REACHABILITY");
-
-        var solvedConstraints = new ArrayList<SIConstraint<KeyType, ValueType>>();
-
-        profiler.startTick("SI_PRUNE_POST_CHECK");
-        for (var c : constraints) {
-            var conflict = checkConflict(c.edges1, reachability,
-                    RWReachability);
-            if (conflict.isPresent()) {
-                addToKnownGraph(knownGraph, c.edges2);
-                solvedConstraints.add(c);
-                // System.err.printf("%s -> %s because of conflict in %s\n",
-                //         c.writeTransaction2, c.writeTransaction1,
-                //         conflict.get());
-                continue;
-            }
-
-            conflict = checkConflict(c.edges2, reachability, RWReachability);
-            if (conflict.isPresent()) {
-                addToKnownGraph(knownGraph, c.edges1);
-                // System.err.printf("%s -> %s because of conflict in %s\n",
-                //         c.writeTransaction1, c.writeTransaction2,
-                //         conflict.get());
-                solvedConstraints.add(c);
-            }
-        }
-        profiler.endTick("SI_PRUNE_POST_CHECK");
-
-        constraints.removeAll(solvedConstraints);
         return Pair.of(solvedConstraints.size(), false);
     }
 
