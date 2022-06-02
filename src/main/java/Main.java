@@ -7,8 +7,11 @@ import history.Event.EventType;
 import history.History;
 import history.HistoryLoader;
 import history.HistoryParser;
+import history.HistoryTransformer;
 import history.loaders.CobraHistoryLoader;
 import history.loaders.DBCopHistoryLoader;
+import history.transformers.Identity;
+import history.transformers.SnapshotIsolationToSerializable;
 import lombok.SneakyThrows;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -83,6 +86,9 @@ class Convert implements Callable<Integer> {
     @Option(names = { "-o", "--output" }, description = "input history type: ${COMPLETION-CANDIDATES}")
     private final HistoryType outType = HistoryType.DBCOP;
 
+    @Option(names = {"-t", "--transform"}, description = "history transformation: ${COMPLETION-CANDIDATES}")
+    private final HistoryTransformation transformation = HistoryTransformation.IDENTITY;
+
     @Parameters(description = "input history path", index = "0")
     private Path inPath;
 
@@ -93,9 +99,11 @@ class Convert implements Callable<Integer> {
     public Integer call() {
         var in = Utils.getParser(inType, inPath);
         var out = Utils.getParser(outType, outPath);
+        var transformer = Utils.getTransformer(transformation);
 
-        var oldHistory = in.loadHistory();
-        convertAndDump(out, oldHistory);
+        var history = in.loadHistory();
+        history = transformer.transformHistory(history);
+        convertAndDump(out, history);
 
         return 0;
     }
@@ -171,8 +179,23 @@ class Utils {
         }
 
     }
+
+    static HistoryTransformer getTransformer(HistoryTransformation transform) {
+        switch (transform) {
+        case IDENTITY:
+            return new Identity();
+        case SI2SER:
+            return new SnapshotIsolationToSerializable();
+        default:
+            throw new UnimplementedError();
+        }
+    }
 }
 
 enum HistoryType {
     COBRA, DBCOP
+}
+
+enum HistoryTransformation {
+    IDENTITY, SI2SER
 }
