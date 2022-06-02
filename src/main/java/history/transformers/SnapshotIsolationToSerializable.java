@@ -15,19 +15,26 @@ import history.Event.EventType;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
-import history.Event;
 
 public class SnapshotIsolationToSerializable implements HistoryTransformer {
     @Override
     public <T, U> History<Object, Object> transformHistory(
             History<T, U> history) {
-        var writes = new HashMap<Object, Set<Transaction<T, U>>>();
-        history.getEvents().stream()
-                .filter(e -> e.getType() == Event.EventType.WRITE)
-                .forEach(ev -> {
-                    writes.computeIfAbsent(ev.getKey(), k -> new HashSet<>())
-                            .add(ev.getTransaction());
-                });
+        var writes = new HashMap<T, Set<Transaction<T, U>>>();
+        var writePosition = new HashMap<Pair<T, U>, Pair<Transaction<T, U>, Integer>>();
+        history.getTransactions().forEach(txn -> {
+            for (int i = 0; i < txn.getEvents().size(); i++) {
+                var ev = txn.getEvents().get(i);
+                if (ev.getType() != EventType.WRITE) {
+                    continue;
+                }
+
+                writes.computeIfAbsent(ev.getKey(), k -> new HashSet<>())
+                        .add(ev.getTransaction());
+                writePosition.put(Pair.of(ev.getKey(), ev.getValue()),
+                        Pair.of(txn, i));
+            }
+        });
 
         var generator = new KVGenerator();
         var conflictKeys = new HashMap<Pair<Transaction<T, U>, Transaction<T, U>>, Triple<GeneratedKey, GeneratedValue, GeneratedValue>>();
@@ -55,8 +62,17 @@ public class SnapshotIsolationToSerializable implements HistoryTransformer {
                         txn.getId() * 2 + 1);
                 var conflictTxns = new HashSet<Transaction<T, U>>();
 
-                txn.getEvents().forEach(op -> {
+                for (var i = 0; i < txn.getEvents().size(); i++) {
+                    var op = txn.getEvents().get(i);
+
                     if (op.getType() == EventType.READ) {
+                        var writePos = writePosition
+                                .get(Pair.of(op.getKey(), op.getValue()));
+                        if (writePos != null && writePos.getLeft() == txn
+                                && writePos.getRight() < i) {
+                            continue;
+                        }
+
                         newHistory.addEvent(readTxn, EventType.READ,
                                 op.getKey(), op.getValue());
                     } else {
@@ -64,7 +80,7 @@ public class SnapshotIsolationToSerializable implements HistoryTransformer {
                                 op.getKey(), op.getValue());
                         conflictTxns.addAll(writes.get(op.getKey()));
                     }
-                });
+                }
 
                 conflictTxns.forEach(txn2 -> {
                     if (txn2 == txn) {
