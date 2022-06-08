@@ -1,6 +1,6 @@
 package verifier;
 
-import graph.PrecedenceGraph;
+import graph.KnownGraph;
 import history.History;
 import history.Transaction;
 import util.Profiler;
@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Optional;
 
 class Pruning {
-    static <KeyType, ValueType> boolean pruneConstraints(PrecedenceGraph<KeyType, ValueType> knownGraph,
+    static <KeyType, ValueType> boolean pruneConstraints(KnownGraph<KeyType, ValueType> knownGraph,
                                                          Collection<SIConstraint<KeyType, ValueType>> constraints,
                                                          History<KeyType, ValueType> history) {
         var profiler = Profiler.getInstance();
@@ -55,7 +55,7 @@ class Pruning {
     }
 
     private static <KeyType, ValueType> Pair<Integer, Boolean> pruneConstraintsWithPostChecking(
-            PrecedenceGraph<KeyType, ValueType> knownGraph,
+            KnownGraph<KeyType, ValueType> knownGraph,
             Collection<SIConstraint<KeyType, ValueType>> constraints,
             History<KeyType, ValueType> history) {
         var profiler = Profiler.getInstance();
@@ -84,9 +84,9 @@ class Pruning {
 
         profiler.startTick("SI_PRUNE_POST_CHECK");
         for (var c : constraints) {
-            var conflict = checkConflict(c.edges1, reachability, knownGraph);
+            var conflict = checkConflict(c.getEdges1(), reachability, knownGraph);
             if (conflict.isPresent()) {
-                addToKnownGraph(knownGraph, c.edges2);
+                addToKnownGraph(knownGraph, c.getEdges2());
                 solvedConstraints.add(c);
                 // System.err.printf("%s -> %s because of conflict in %s\n",
                 //         c.writeTransaction2, c.writeTransaction1,
@@ -94,9 +94,9 @@ class Pruning {
                 continue;
             }
 
-            conflict = checkConflict(c.edges2, reachability, knownGraph);
+            conflict = checkConflict(c.getEdges2(), reachability, knownGraph);
             if (conflict.isPresent()) {
-                addToKnownGraph(knownGraph, c.edges1);
+                addToKnownGraph(knownGraph, c.getEdges1());
                 // System.err.printf("%s -> %s because of conflict in %s\n",
                 //         c.writeTransaction1, c.writeTransaction2,
                 //         conflict.get());
@@ -113,7 +113,7 @@ class Pruning {
     }
 
     private static <KeyType, ValueType> void addToKnownGraph(
-            PrecedenceGraph<KeyType, ValueType> knownGraph,
+            KnownGraph<KeyType, ValueType> knownGraph,
             List<SIEdge<KeyType, ValueType>> edges) {
         for (var e : edges) {
             switch (e.getType()) {
@@ -135,7 +135,7 @@ class Pruning {
     private static <KeyType, ValueType> Optional<SIEdge<KeyType, ValueType>> checkConflict(
             List<SIEdge<KeyType, ValueType>> edges,
             MatrixGraph<Transaction<KeyType, ValueType>> reachability,
-            PrecedenceGraph<KeyType, ValueType> knownGraph) {
+            KnownGraph<KeyType, ValueType> knownGraph) {
         for (var e : edges) {
             switch (e.getType()) {
             case WW:
@@ -161,35 +161,4 @@ class Pruning {
 
         return Optional.empty();
     }
-
-    private static <KeyType, ValueType> Optional<SIEdge<KeyType, ValueType>> checkConflict(
-            List<SIEdge<KeyType, ValueType>> edges,
-            MatrixGraph<Transaction<KeyType, ValueType>> reachability,
-            MatrixGraph<Transaction<KeyType, ValueType>> RWReachability) {
-        SIEdge<KeyType, ValueType> conflictEdge = null;
-        var hasInverseEdge = ((Function<SIEdge<KeyType, ValueType>, Boolean>) edge -> {
-            switch (edge.getType()) {
-            case WW:
-                return reachability.hasEdgeConnecting(edge.getTo(),
-                        edge.getFrom());
-            default:
-                return RWReachability.hasEdgeConnecting(edge.getTo(),
-                        edge.getFrom());
-            }
-        });
-
-        for (var e : edges) {
-            if (hasInverseEdge.apply(e)) {
-                conflictEdge = e;
-                // System.err.printf("conflict edge: %s\n", e);
-                break;
-            }
-        }
-
-        return conflictEdge == null ? Optional.empty()
-                : Optional.of(conflictEdge);
-    }
-}
-
-class PruningUtils {
 }

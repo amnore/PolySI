@@ -23,8 +23,9 @@ import history.Transaction;
 import lombok.Getter;
 
 @SuppressWarnings("UnstableApiUsage")
-public class PrecedenceGraph<KeyType, ValueType> {
-    private final MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Edge<KeyType>>> readFromGraph = ValueGraphBuilder
+@Getter
+public class KnownGraph<KeyType, ValueType> {
+    private final MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Edge<KeyType>>> readFrom = ValueGraphBuilder
             .directed().build();
     private final MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Edge<KeyType>>> knownGraphA = ValueGraphBuilder
             .directed().build();
@@ -36,11 +37,11 @@ public class PrecedenceGraph<KeyType, ValueType> {
      *
      * The built graph contains SO and WR edges
      */
-    public PrecedenceGraph(History<KeyType, ValueType> history) {
+    public KnownGraph(History<KeyType, ValueType> history) {
         history.getTransactions().forEach(txn -> {
             knownGraphA.addNode(txn);
             knownGraphB.addNode(txn);
-            readFromGraph.addNode(txn);
+            readFrom.addNode(txn);
         });
 
         // add SO edges
@@ -74,23 +75,11 @@ public class PrecedenceGraph<KeyType, ValueType> {
         });
     }
 
-    public ValueGraph<Transaction<KeyType, ValueType>, Collection<Edge<KeyType>>> getReadFrom() {
-        return readFromGraph;
-    }
-
-    public ValueGraph<Transaction<KeyType, ValueType>, Collection<Edge<KeyType>>> getKnownGraphA() {
-        return knownGraphA;
-    }
-
-    public ValueGraph<Transaction<KeyType, ValueType>, Collection<Edge<KeyType>>> getKnownGraphB() {
-        return knownGraphB;
-    }
-
     public void putEdge(Transaction<KeyType, ValueType> u,
             Transaction<KeyType, ValueType> v, Edge<KeyType> edge) {
         switch (edge.getType()) {
         case WR:
-            addEdge(readFromGraph, u, v, edge);
+            addEdge(readFrom, u, v, edge);
             // fallthrough
         case WW:
         case SO:
