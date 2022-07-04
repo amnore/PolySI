@@ -27,42 +27,24 @@ for dataset in Path('.').glob('*'):
             dbcop[dataset.name][param][histid] = \
                 (obj['minViolation'] == 'ok', obj['duration'] * 1000)
 
-"""
-DBCopExecutions/antidote_all_writes/3_30_20_180/hist-00000/history.bincode
-Sessions count: 4
-Transactions count: 91
-Events count: 1980
-WR edges count: 858
-SO edges count: 87
-Constraints count: 4548
+for path in Path('.').glob('**/log'):
+    with open(path) as log:
+        lines = log.readlines()
+        [_, dataset, params, hist, __] = str(path).split('/')
 
->>> Overall runtime = 1513ms
-  construct: 41ms
-  solve: 1472ms
-[[[[ REJECT ]]]]
+        def get_time(p: str) -> float:
+            r = re.compile(p + r': (\d+)ms')
+            for l in lines:
+                match = r.match(l)
+                if match is not None:
+                    return float(float(match.group(1)))
+            raise RuntimeError()
 
-"""
-with open('/tmp/log') as log:
-    while True:
-        lines = []
-        while True:
-            l = log.readline()
-            if not l:
-                break
-            if not re.match(r'^(?:Conflicts|Edge|Constraint):', l):
-                lines.append(l)
-                if len(lines) == 13:
-                    break
-        if len(lines) < 13:
-            break
-
-        loc = lines[0]
-        [_, dataset, params, hist, __] = loc.split('/')
-        get_time = lambda l: float(l.split()[-1][:-2])
-        total_time = get_time(lines[8])
-        construct_time = get_time(lines[9])
-        solve_time = get_time(lines[10])
-        result = lines[11].startswith('[[[[ ACCEPT ]]]]')
+        total_time = get_time('ENTIRE_EXPERIMENT')
+        construct_time = get_time('ONESHOT_CONS') + get_time('SI_VERIFY_INT') \
+            + get_time('SI_GEN_PREC_GRAPH') + get_time('SI_GEN_CONSTRAINTS')
+        solve_time = get_time('ONESHOT_SOLVE')
+        result = lines[-1].startswith('[[[[ ACCEPT ]]]]')
         
         param = tuple(map(int, params.split('_')))
         histid = int(hist.split('-')[-1])
@@ -70,8 +52,6 @@ with open('/tmp/log') as log:
             si[dataset] = {}
         if param not in si[dataset]:
             si[dataset][param] = {}
-        if histid not in si[dataset][param]:
-            si[dataset][param][histid] = {}
         si[dataset][param][histid] = (result, total_time, construct_time, solve_time)
 
 total_n: Dict[Tuple[str, Param], int] = {}
@@ -85,7 +65,7 @@ total_solve_time: Dict[Tuple[str, Param], float] = {}
 
 def for_each_result(f: Callable[[Tuple[str, Param, int], 
                                  Tuple[bool, float],
-                                 Tuple[bool, float]],
+                                 Tuple[bool, float, float, float]],
                                 Any]):
     global si, dbcop
     datasets = ('galera_all_writes', 'galera_partition_writes',

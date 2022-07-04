@@ -175,4 +175,35 @@ public class TestVerifier {
 
         assertFalse(new SIVerifier<>(h).audit());
     }
+
+    @Test
+    void example1() {
+        var h = new TestLoader(
+            Set.of(0, 1, 2),
+            Map.of(0, List.of(6, 1),
+                1, List.of(5, 4),
+                2, List.of(3, 2)),
+            Map.of(
+                1, List.of(
+                    Triple.of(WRITE, "x", 1),
+                    Triple.of(WRITE, "w", 2),
+                    Triple.of(READ, "y", 1)
+                ),
+                2, List.of(
+                    Triple.of(WRITE, "x", 2),
+                    Triple.of(WRITE, "y", 2),
+                    Triple.of(READ, "z", 1)
+                ),
+                3, List.of(Triple.of(WRITE, "y", 1)),
+                4, List.of(
+                    Triple.of(WRITE, "z", 2),
+                    Triple.of(READ, "w", 1)
+                ),
+                5, List.of(Triple.of(WRITE, "z", 1)),
+                6, List.of(Triple.of(WRITE, "w", 1))
+            )
+        );
+
+        assertTrue(new SIVerifier<>(h).audit());
+    }
 }
