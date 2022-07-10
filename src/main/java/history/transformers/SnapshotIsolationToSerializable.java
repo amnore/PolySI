@@ -62,6 +62,9 @@ public class SnapshotIsolationToSerializable implements HistoryTransformer {
                         txn.getId() * 2 + 1);
                 var conflictTxns = new HashSet<Transaction<T, U>>();
 
+                readTxn.setStatus(txn.getStatus());
+                writeTxn.setStatus(txn.getStatus());
+
                 for (var i = 0; i < txn.getEvents().size(); i++) {
                     var op = txn.getEvents().get(i);
 

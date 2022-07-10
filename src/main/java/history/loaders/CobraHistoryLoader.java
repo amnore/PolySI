@@ -74,10 +74,10 @@ public class CobraHistoryLoader implements HistoryParser<Long, CobraHistoryLoade
 		for (var p : initWrites.entrySet()) {
 			history.addEvent(initTxn, WRITE, p.getKey(), p.getValue());
 		}
+		initTxn.setStatus(Transaction.TransactionStatus.COMMIT);
 
-		// check all transactions except init are committed
 		for (var txn : history.getTransactions()) {
-			if (txn != initTxn && txn.getStatus() != Transaction.TransactionStatus.COMMIT) {
+			if (txn.getStatus() != Transaction.TransactionStatus.COMMIT) {
 				throw new InvalidHistoryError();
 			}
 		}
@@ -186,10 +186,6 @@ public class CobraHistoryLoader implements HistoryParser<Long, CobraHistoryLoade
 		Arrays.stream(logDir.listFiles()).forEach(f -> f.delete());
 
 		for (var session : history.getSessions()) {
-			if (session.getId() == INIT_TXN_ID) {
-				continue;
-			}
-
 			try (var out = new DataOutputStream(new FileOutputStream(
 					logDir.toPath().resolve(String.format("T%d.log", session.getId())).toFile()))) {
 				for (var transaction : session.getTransactions()) {
