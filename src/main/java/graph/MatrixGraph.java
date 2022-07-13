@@ -21,6 +21,7 @@ import com.google.common.graph.GraphBuilder;
 import com.google.common.graph.Graphs;
 import com.google.common.graph.MutableGraph;
 
+import gpu.GPUmm;
 import util.UnimplementedError;
 
 public class MatrixGraph<T> implements MutableGraph<T> {
@@ -105,8 +106,39 @@ public class MatrixGraph<T> implements MutableGraph<T> {
         return result;
     }
 
+    private static float[] m = null;
+    private MatrixGraph<T> gpuReachability() {
+        int n = nodeMap.size();
+        if (m == null) {
+            m = new float[n * n];
+        }
+
+        for (int j = 0; j < n; j++) {
+            m[j * n + j] = 1;
+            for (int i = 0; i < n; i++) {
+                if (get(i, j)) {
+                    m[j * n + i] = 1;
+                }
+            }
+        }
+
+        GPUmm.matrixPower(m, n, true);
+
+        var result = ofNodes(this);
+        for (int j = 0; j < n; j++) {
+            for (int i = 0; i < n; i++) {
+                if (m[j * n + i] != 0 && i != j) {
+                    result.set(i, j);
+                }
+            }
+        }
+
+        return result;
+    }
+
     public MatrixGraph<T> reachability() {
-        return allNodesBfs();
+        // return allNodesBfs();
+        return gpuReachability();
     }
 
     private MatrixGraph<T> matrixProduct(MatrixGraph<T> other) {
