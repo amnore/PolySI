@@ -137,8 +137,8 @@ public class MatrixGraph<T> implements MutableGraph<T> {
     }
 
     public MatrixGraph<T> reachability() {
-        // return allNodesBfs();
-        return gpuReachability();
+        return allNodesBfs();
+        // return gpuReachability();
     }
 
     private MatrixGraph<T> matrixProduct(MatrixGraph<T> other) {

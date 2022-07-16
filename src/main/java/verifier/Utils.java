@@ -2,6 +2,7 @@ package verifier;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,7 +32,8 @@ import monosat.Solver;
 class Utils {
     static <KeyType, ValueType> boolean verifyInternalConsistency(
             History<KeyType, ValueType> history) {
-        var writes = new HashMap<Pair<KeyType, ValueType>, Pair<Transaction<KeyType, ValueType>, Integer>>();
+        var writes = new HashMap<Pair<KeyType, ValueType>, Pair<Event<KeyType, ValueType>, Integer>>();
+        var txnWrites = new HashMap<Pair<Transaction<KeyType, ValueType>, KeyType>, ArrayList<Integer>>();
         var getEvents = ((Function<Event.EventType, Stream<Pair<Integer, Event<KeyType, ValueType>>>>) type -> history
                 .getTransactions().stream().flatMap(txn -> {
                     var events = txn.getEvents();
@@ -43,8 +45,9 @@ class Utils {
         getEvents.apply(Event.EventType.WRITE).forEach(p -> {
             var i = p.getLeft();
             var ev = p.getRight();
-            writes.put(Pair.of(ev.getKey(), ev.getValue()),
-                    Pair.of(ev.getTransaction(), i));
+            writes.put(Pair.of(ev.getKey(), ev.getValue()), Pair.of(ev, i));
+            txnWrites.computeIfAbsent(Pair.of(ev.getTransaction(), ev.getKey()),
+                    k -> new ArrayList()).add(i);
         });
 
         for (var p : getEvents.apply(Event.EventType.READ)
@@ -54,19 +57,28 @@ class Utils {
             var writeEv = writes.get(Pair.of(ev.getKey(), ev.getValue()));
 
             if (writeEv == null) {
-                var txn = ev.getTransaction();
-                System.err.printf(
-                        "(Session=%s, Transaction=%s, Event=%s) has no corresponding write\n",
-                        txn.getSession().getId(), txn.getId(), ev);
+                System.err.printf("%s has no corresponding write\n", ev);
                 return false;
             }
 
-            if (writeEv.getLeft() == ev.getTransaction()
-                    && writeEv.getRight() >= i) {
-                var txn = ev.getTransaction();
-                System.err.printf(
-                        "(%s, %s, %s) reads from a write after it in the same transaction\n",
-                        txn.getSession(), txn, ev);
+            var writeIndices = txnWrites
+                    .get(Pair.of(writeEv.getLeft().getTransaction(),
+                            writeEv.getLeft().getKey()));
+            var j = Collections.binarySearch(writeIndices, writeEv.getRight());
+
+            if (writeEv.getLeft().getTransaction() == ev.getTransaction()) {
+                if (j != writeIndices.size() - 1 && writeIndices.get(j + 1) < i) {
+                    System.err.printf("%s not reading from latest write: %s\n",
+                            ev, writeEv.getLeft());
+                    return false;
+                } else if (writeEv.getRight() > i) {
+                    System.err.printf("%s reads from a write after it: %s\n",
+                            ev, writeEv.getLeft());
+                    return false;
+                }
+            } else if (j != writeIndices.size() - 1) {
+                System.err.printf("%s not reading from latest write: %s\n", ev,
+                        writeEv.getLeft());
                 return false;
             }
         }

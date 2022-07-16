@@ -17,16 +17,24 @@ import java.util.List;
 import java.util.Optional;
 
 class Pruning {
-    static <KeyType, ValueType> boolean pruneConstraints(KnownGraph<KeyType, ValueType> knownGraph,
-                                                         Collection<SIConstraint<KeyType, ValueType>> constraints,
-                                                         History<KeyType, ValueType> history) {
+    static <KeyType, ValueType> boolean pruneConstraints(
+            KnownGraph<KeyType, ValueType> knownGraph,
+            Collection<SIConstraint<KeyType, ValueType>> constraints,
+            History<KeyType, ValueType> history) {
         var profiler = Profiler.getInstance();
 
         profiler.startTick("SI_PRUNE");
         int rounds = 1, solvedConstraints = 0;
         while (true) {
+            var maxRounds = Integer
+                    .parseInt(System.getenv("SI_ROUNDS") == null ? "100"
+                            : System.getenv("SI_ROUNDS"));
+            if (rounds > maxRounds)
+                break;
+
             System.err.printf("Pruning round %d\n", rounds);
-            var result = pruneConstraintsWithPostChecking(knownGraph, constraints, history);
+            var result = pruneConstraintsWithPostChecking(knownGraph,
+                    constraints, history);
 
             if (result.getRight()) {
                 profiler.endTick("SI_PRUNE");
@@ -84,13 +92,14 @@ class Pruning {
 
         profiler.startTick("SI_PRUNE_POST_CHECK");
         for (var c : constraints) {
-            var conflict = checkConflict(c.getEdges1(), reachability, knownGraph);
+            var conflict = checkConflict(c.getEdges1(), reachability,
+                    knownGraph);
             if (conflict.isPresent()) {
                 addToKnownGraph(knownGraph, c.getEdges2());
                 solvedConstraints.add(c);
                 // System.err.printf("%s -> %s because of conflict in %s\n",
-                //         c.writeTransaction2, c.writeTransaction1,
-                //         conflict.get());
+                // c.writeTransaction2, c.writeTransaction1,
+                // conflict.get());
                 continue;
             }
 
@@ -98,8 +107,8 @@ class Pruning {
             if (conflict.isPresent()) {
                 addToKnownGraph(knownGraph, c.getEdges1());
                 // System.err.printf("%s -> %s because of conflict in %s\n",
-                //         c.writeTransaction1, c.writeTransaction2,
-                //         conflict.get());
+                // c.writeTransaction1, c.writeTransaction2,
+                // conflict.get());
                 solvedConstraints.add(c);
             }
         }
