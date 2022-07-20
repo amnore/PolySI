@@ -20,6 +20,7 @@ import picocli.CommandLine.Parameters;
 import util.Profiler;
 import util.UnimplementedError;
 import verifier.SIVerifier;
+import graph.MatrixGraph;
 
 @Command(name = "verifier", mixinStandardHelpOptions = true, version = "verifier 0.0.1", subcommands = { Audit.class,
         Convert.class, Stat.class, Dump.class })
@@ -43,6 +44,9 @@ class Audit implements Callable<Integer> {
     @Option(names = { "-t", "--type" }, description = "history type: ${COMPLETION-CANDIDATES}")
     private final HistoryType type = HistoryType.COBRA;
 
+    @Option(names = { "--gpu" }, description = "use GPU")
+    private final Boolean useGPU = false;
+
     @Parameters(description = "history path")
     private Path path;
 
@@ -51,6 +55,10 @@ class Audit implements Callable<Integer> {
     @Override
     public Integer call() {
         var loader = Utils.getParser(type, path);
+
+        if (useGPU) {
+            MatrixGraph.setUSE_GPU(true);
+        }
 
         profiler.startTick("ENTIRE_EXPERIMENT");
         var pass = true;

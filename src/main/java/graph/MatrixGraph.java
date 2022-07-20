@@ -21,10 +21,17 @@ import com.google.common.graph.GraphBuilder;
 import com.google.common.graph.Graphs;
 import com.google.common.graph.MutableGraph;
 
+import lombok.Getter;
+import lombok.Setter;
+
 import gpu.GPUmm;
 import util.UnimplementedError;
 
 public class MatrixGraph<T> implements MutableGraph<T> {
+    @Getter
+    @Setter
+    private static boolean USE_GPU = false;
+
     private final BiMap<T, Integer> nodeMap = HashBiMap.create();
     private final long adjacency[][];
     private static final int LONG_BITS = 64;
@@ -147,8 +154,11 @@ public class MatrixGraph<T> implements MutableGraph<T> {
     }
 
     public MatrixGraph<T> reachability() {
-        // return allNodesBfs();
-        return gpuReachability2();
+        if (USE_GPU) {
+            return gpuReachability2();
+        } else {
+            return allNodesBfs();
+        }
     }
 
     private MatrixGraph<T> matrixProduct(MatrixGraph<T> other) {
