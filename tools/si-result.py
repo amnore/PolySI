@@ -11,26 +11,30 @@ Param = Tuple[int, int, int, int]
 dbcop: Dict[str, Dict[Param, Dict[int, Tuple[bool, float]]]] = {}
 si: Dict[str, Dict[Param, Dict[int, Tuple[bool, float, float, float]]]] = {}
 
-for dataset in Path('.').glob('*'):
-    dbcop[dataset.name] = {}
+DBCOP_RESULT = Path('/home/czg/Downloads/dbcop_ver')
+SI_RESULT = Path('/tmp/si-dbcop')
+
+for dataset in DBCOP_RESULT.glob('*_inc'):
+    name = dataset.name[:-4]
+    dbcop[name] = {}
 
     for params in dataset.glob('*'):
         if params.name == 'stats.db':
             continue
 
         param = tuple(map(int, params.name.split('_')))
-        dbcop[dataset.name][param] = {}
+        dbcop[name][param] = {}
 
         for hist in params.glob('*'):
             histid = int(hist.name.split('-')[1])
             obj = loads((hist / 'result_log.json').open().readlines()[-1])
-            dbcop[dataset.name][param][histid] = \
-                (obj['minViolation'] == 'ok', obj['duration'] * 1000)
+            dbcop[name][param][histid] = \
+                (obj['minViolation'] in ['ok', 'Serializable'], obj['duration'] * 1000)
 
-for path in Path('.').glob('**/log'):
+for path in SI_RESULT.glob('**/hist-*'):
     with open(path) as log:
         lines = log.readlines()
-        [_, dataset, params, hist, __] = str(path).split('/')
+        [dataset, params, hist] = str(path).split('/')[-3:]
 
         def get_time(p: str) -> float:
             r = re.compile(p + r': (\d+)ms')
@@ -63,15 +67,12 @@ total_rej_time: Dict[Tuple[str, Param], float] = {}
 total_construct_time: Dict[Tuple[str, Param], float] = {}
 total_solve_time: Dict[Tuple[str, Param], float] = {}
 
-def for_each_result(f: Callable[[Tuple[str, Param, int], 
+def for_each_result(dataset: str, f: Callable[[Tuple[str, Param, int], 
                                  Tuple[bool, float],
                                  Tuple[bool, float, float, float]],
                                 Any]):
     global si, dbcop
-    datasets = ('galera_all_writes', 'galera_partition_writes',
-                'roachdb_all_writes', 'roachdb_partition_writes')
-    param = (3, 30, 20, 180)
-    for dataset in datasets:
+    for param in si[dataset].keys():
         for histid in si[dataset][param].keys():
             f((dataset, param, histid), dbcop[dataset][param][histid], si[dataset][param][histid])
 
@@ -106,26 +107,34 @@ def do_stats(p, q, r):
     sum_time(p, q, r)
     sum_result(p, q, r)
 
-for_each_result(do_stats)
+    #  datasets = ('galera_all_writes', 'galera_partition_writes',
+                #  'roachdb_all_writes', 'roachdb_partition_writes')
+for dataset in 'galera_all_writes', 'galera_partition_writes', \
+        'roachdb_general_all_writes', 'roachdb_general_partition_writes':
+    true_pos = 0
+    true_neg = 0
+    false_pos = 0
+    false_neg = 0
+    for_each_result(dataset, do_stats)
+    print('\n{}\n||True|False|\n|-|-|-|'.format(dataset))
+    print('|Positive|{}|{}|'.format(true_pos, false_pos))
+    print('|Negative|{}|{}|'.format(true_neg, false_neg))
 
-print('||Number|SI Time|DBCop Time|\n|-|-|-|-|')
-for k in total_n.keys():
-    n = total_n[k]
-    print('|{}|{}|{:.2f}|{:.2f}|'.format(k[0], n, total_si_time[k] / n, total_dbcop_time[k] / n))
+#  print('||Number|SI Time|DBCop Time|\n|-|-|-|-|')
+#  for k in total_n.keys():
+    #  n = total_n[k]
+    #  print('|{}|{}|{:.2f}|{:.2f}|'.format(k[0], n, total_si_time[k] / n, total_dbcop_time[k] / n))
 
-print('\n||True|False|\n|-|-|-|')
-print('|Positive|{}|{}|'.format(true_pos, false_pos))
-print('|Negative|{}|{}|'.format(true_neg, false_neg))
 
-print('\n||Accept N|Reject N|Accept Time|Reject Time|\n|-|-|-|-|-|')
-for k in total_si_time.keys():
-    rej_n = total_rej_n[k] 
-    ac_n = total_n[k] - rej_n
-    rej_t = total_rej_time[k]
-    ac_t = total_si_time[k] - rej_t
-    print('|{}|{}|{}|{:.2f}|{:.2f}|'.format(k[0], ac_n, rej_n, ac_t / ac_n, rej_t / rej_n))
+#  print('\n||Accept N|Reject N|Accept Time|Reject Time|\n|-|-|-|-|-|')
+#  for k in total_si_time.keys():
+    #  rej_n = total_rej_n[k] 
+    #  ac_n = total_n[k] - rej_n
+    #  rej_t = total_rej_time[k]
+    #  ac_t = total_si_time[k] - rej_t
+    #  print('|{}|{}|{}|{:.2f}|{:.2f}|'.format(k[0], ac_n, rej_n, ac_t / ac_n, rej_t / rej_n))
 
-print('\n||Construct Time|Solve Time|\n|-|-|-|')
-for k in total_n.keys():
-    n = total_n[k]
-    print('|{}|{:.2f}|{:.2f}|'.format(k[0], total_construct_time[k] / n, total_solve_time[k] / n))
+#  print('\n||Construct Time|Solve Time|\n|-|-|-|')
+#  for k in total_n.keys():
+    #  n = total_n[k]
+    #  print('|{}|{:.2f}|{:.2f}|'.format(k[0], total_construct_time[k] / n, total_solve_time[k] / n))
