@@ -60,9 +60,9 @@ public class SIVerifier<KeyType, ValueType> {
             System.err.printf("Loop found in pruning\n");
         }
 
+        profiler.startTick("ONESHOT_SOLVE");
         var solver = new SISolver<>(history, graph, constraints);
 
-        profiler.startTick("ONESHOT_SOLVE");
         boolean accepted = solver.solve();
         profiler.endTick("ONESHOT_SOLVE");
 

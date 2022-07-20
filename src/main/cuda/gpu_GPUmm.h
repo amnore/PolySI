@@ -9,43 +9,19 @@ extern "C" {
 #endif
 /*
  * Class:     gpu_GPUmm
- * Method:    init
- * Signature: ()V
- */
-JNIEXPORT void JNICALL Java_gpu_GPUmm_init
-  (JNIEnv *, jclass);
-
-/*
- * Class:     gpu_GPUmm
- * Method:    destroy
- * Signature: ()V
- */
-JNIEXPORT void JNICALL Java_gpu_GPUmm_destroy
-  (JNIEnv *, jclass);
-
-/*
- * Class:     gpu_GPUmm
- * Method:    selfmm
+ * Method:    power
  * Signature: ([FI)V
  */
-JNIEXPORT void JNICALL Java_gpu_GPUmm_selfmm
+JNIEXPORT void JNICALL Java_gpu_GPUmm_power
   (JNIEnv *, jclass, jfloatArray, jint);
 
 /*
  * Class:     gpu_GPUmm
  * Method:    power
- * Signature: ([FIZ)V
+ * Signature: ([JI)V
  */
-JNIEXPORT void JNICALL Java_gpu_GPUmm_power
-  (JNIEnv *, jclass, jfloatArray, jint, jboolean);
-
-/*
- * Class:     gpu_GPUmm
- * Method:    connect
- * Signature: ([F[I[II)V
- */
-JNIEXPORT void JNICALL Java_gpu_GPUmm_connect
-  (JNIEnv *, jclass, jfloatArray, jintArray, jintArray, jint);
+JNIEXPORT void JNICALL Java_gpu_GPUmm_booleanPower
+  (JNIEnv *, jclass, jobjectArray, jint);
 
 #ifdef __cplusplus
 }

@@ -122,7 +122,7 @@ public class MatrixGraph<T> implements MutableGraph<T> {
             }
         }
 
-        GPUmm.matrixPower(m, n, true);
+        GPUmm.matrixPower(m, n);
 
         var result = ofNodes(this);
         for (int j = 0; j < n; j++) {
@@ -136,9 +136,19 @@ public class MatrixGraph<T> implements MutableGraph<T> {
         return result;
     }
 
+    private MatrixGraph<T> gpuReachability2() {
+        if (topoSortId().isEmpty()) {
+            throw new Error();
+        }
+
+        var result = new MatrixGraph(this);
+        GPUmm.matrixPower(result.adjacency, adjacency.length);
+        return result;
+    }
+
     public MatrixGraph<T> reachability() {
-        return allNodesBfs();
-        // return gpuReachability();
+        // return allNodesBfs();
+        return gpuReachability2();
     }
 
     private MatrixGraph<T> matrixProduct(MatrixGraph<T> other) {

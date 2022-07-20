@@ -9,26 +9,15 @@ public class GPUmm {
         System.loadLibrary("gpumm");
     }
 
-    private static native void init();
+    private static native void power(float[] fb, int n);
 
-    public static native void destroy();
+    private static native void booleanPower(long[][] matrix, int n);
 
-    public static native void selfmm(float[] fb, int n);
+    public static synchronized void matrixPower(float[] fb, int n) {
+        power(fb, n);
+    }
 
-    private static native void power(float[] fb, int n, boolean fresh);
-
-    public static native void connect(float[] fb, int[] src_list,
-            int[] dst_list, int n);
-
-    private static boolean has_init = false;
-
-    public static synchronized void matrixPower(float[] fb, int n,
-            boolean fresh) {
-        if (!has_init) {
-            init();
-            has_init = true;
-        }
-
-        power(fb, n, fresh);
+    public static synchronized void matrixPower(long[][] mat, int n) {
+        booleanPower(mat, n);
     }
 }
