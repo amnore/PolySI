@@ -31,14 +31,14 @@ import util.Profiler;
 
 @SuppressWarnings("UnstableApiUsage")
 class SISolver<KeyType, ValueType> {
-    final Solver solver = new Solver();
+    private final Solver solver = new Solver();
 
     // The literals of the known graph
-    final Map<Lit, Pair<EndpointPair<Transaction<KeyType, ValueType>>, Collection<Edge<KeyType>>>> knownLiterals = new HashMap<>();
+    private final Map<Lit, Pair<EndpointPair<Transaction<KeyType, ValueType>>, Collection<Edge<KeyType>>>> knownLiterals = new HashMap<>();
 
     // The literals asserting that exactly one set of edges exists in the graph
     // for each constraint
-    final Map<Lit, SIConstraint<KeyType, ValueType>> constraintLiterals = new HashMap<>();
+    private final Map<Lit, SIConstraint<KeyType, ValueType>> constraintLiterals = new HashMap<>();
 
     boolean solve() {
         var lits = Stream

@@ -28,6 +28,7 @@ dependencies {
 }
 
 test {
+    systemProperty "java.library.path", "$buildDir/monosat"
     jvmArgs += [ "-Xmx4096m" ]
     useJUnitPlatform()
 }

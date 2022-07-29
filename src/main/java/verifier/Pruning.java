@@ -13,14 +13,25 @@ import java.util.function.Function;
 
 import org.apache.commons.lang3.tuple.Pair;
 
+import lombok.Getter;
+import lombok.Setter;
+
 import java.util.List;
 import java.util.Optional;
 
-class Pruning {
+public class Pruning {
+    @Getter
+    @Setter
+    private static boolean enablePruning = true;
+
     static <KeyType, ValueType> boolean pruneConstraints(
             KnownGraph<KeyType, ValueType> knownGraph,
             Collection<SIConstraint<KeyType, ValueType>> constraints,
             History<KeyType, ValueType> history) {
+        if (!enablePruning) {
+            return false;
+        }
+
         var profiler = Profiler.getInstance();
 
         profiler.startTick("SI_PRUNE");

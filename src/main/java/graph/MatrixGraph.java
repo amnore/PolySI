@@ -30,7 +30,7 @@ import util.UnimplementedError;
 public class MatrixGraph<T> implements MutableGraph<T> {
     @Getter
     @Setter
-    private static boolean USE_GPU = false;
+    private static boolean enableGPU = false;
 
     private final BiMap<T, Integer> nodeMap = HashBiMap.create();
     private final long adjacency[][];
@@ -154,7 +154,7 @@ public class MatrixGraph<T> implements MutableGraph<T> {
     }
 
     public MatrixGraph<T> reachability() {
-        if (USE_GPU) {
+        if (enableGPU) {
             return gpuReachability2();
         } else {
             return allNodesBfs();

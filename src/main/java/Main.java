@@ -10,6 +10,7 @@ import history.HistoryParser;
 import history.HistoryTransformer;
 import history.loaders.CobraHistoryLoader;
 import history.loaders.DBCopHistoryLoader;
+import history.loaders.TextHistoryLoader;
 import history.transformers.Identity;
 import history.transformers.SnapshotIsolationToSerializable;
 import lombok.SneakyThrows;
@@ -19,11 +20,12 @@ import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 import util.Profiler;
 import util.UnimplementedError;
+import verifier.Pruning;
 import verifier.SIVerifier;
 import graph.MatrixGraph;
 
-@Command(name = "verifier", mixinStandardHelpOptions = true, version = "verifier 0.0.1", subcommands = { Audit.class,
-        Convert.class, Stat.class, Dump.class })
+@Command(name = "verifier", mixinStandardHelpOptions = true, version = "verifier 0.0.1", subcommands = {
+        Audit.class, Convert.class, Stat.class, Dump.class })
 public class Main implements Callable<Integer> {
     @SneakyThrows
     public static void main(String[] args) {
@@ -41,11 +43,15 @@ public class Main implements Callable<Integer> {
 
 @Command(name = "audit", mixinStandardHelpOptions = true)
 class Audit implements Callable<Integer> {
-    @Option(names = { "-t", "--type" }, description = "history type: ${COMPLETION-CANDIDATES}")
+    @Option(names = { "-t",
+            "--type" }, description = "history type: ${COMPLETION-CANDIDATES}")
     private final HistoryType type = HistoryType.COBRA;
 
     @Option(names = { "--gpu" }, description = "use GPU")
     private final Boolean useGPU = false;
+
+    @Option(names = { "--no-pruning" }, description = "disable pruning")
+    private final Boolean noPruning = false;
 
     @Parameters(description = "history path")
     private Path path;
@@ -56,9 +62,8 @@ class Audit implements Callable<Integer> {
     public Integer call() {
         var loader = Utils.getParser(type, path);
 
-        if (useGPU) {
-            MatrixGraph.setUSE_GPU(true);
-        }
+        MatrixGraph.setEnableGPU(useGPU);
+        Pruning.setEnablePruning(!noPruning);
 
         profiler.startTick("ENTIRE_EXPERIMENT");
         var pass = true;
@@ -88,13 +93,16 @@ class Audit implements Callable<Integer> {
 
 @Command(name = "convert", mixinStandardHelpOptions = true)
 class Convert implements Callable<Integer> {
-    @Option(names = { "-f", "--from" }, description = "input history type: ${COMPLETION-CANDIDATES}")
+    @Option(names = { "-f",
+            "--from" }, description = "input history type: ${COMPLETION-CANDIDATES}")
     private final HistoryType inType = HistoryType.COBRA;
 
-    @Option(names = { "-o", "--output" }, description = "input history type: ${COMPLETION-CANDIDATES}")
+    @Option(names = { "-o",
+            "--output" }, description = "input history type: ${COMPLETION-CANDIDATES}")
     private final HistoryType outType = HistoryType.DBCOP;
 
-    @Option(names = {"-t", "--transform"}, description = "history transformation: ${COMPLETION-CANDIDATES}")
+    @Option(names = { "-t",
+            "--transform" }, description = "history transformation: ${COMPLETION-CANDIDATES}")
     private final HistoryTransformation transformation = HistoryTransformation.IDENTITY;
 
     @Parameters(description = "input history path", index = "0")
@@ -116,14 +124,16 @@ class Convert implements Callable<Integer> {
         return 0;
     }
 
-    private <T, U> void convertAndDump(HistoryParser<T, U> parser, History<?, ?> history) {
+    private <T, U> void convertAndDump(HistoryParser<T, U> parser,
+            History<?, ?> history) {
         parser.dumpHistory(parser.convertFrom(history));
     }
 }
 
 @Command(name = "stat", mixinStandardHelpOptions = true)
 class Stat implements Callable<Integer> {
-    @Option(names = { "-t", "--type" }, description = "history type: ${COMPLETION-CANDIDATES}")
+    @Option(names = { "-t",
+            "--type" }, description = "history type: ${COMPLETION-CANDIDATES}")
     private final HistoryType type = HistoryType.COBRA;
 
     @Parameters(description = "history path")
@@ -135,11 +145,15 @@ class Stat implements Callable<Integer> {
         var history = loader.loadHistory();
 
         var events = history.getEvents();
-        System.out.printf(
-                "Sessions: %d\n" + "Transactions: %d\n" + "Events: total %d, read %d, write %d\n" + "Variables: %d\n",
-                history.getSessions().size(), history.getTransactions().size(), events.size(),
-                events.stream().filter(e -> e.getType() == Event.EventType.READ).count(),
-                events.stream().filter(e -> e.getType() == Event.EventType.WRITE).count(),
+        System.out.printf("Sessions: %d\n" + "Transactions: %d\n"
+                + "Events: total %d, read %d, write %d\n" + "Variables: %d\n",
+                history.getSessions().size(), history.getTransactions().size(),
+                events.size(),
+                events.stream().filter(e -> e.getType() == Event.EventType.READ)
+                        .count(),
+                events.stream()
+                        .filter(e -> e.getType() == Event.EventType.WRITE)
+                        .count(),
                 events.stream().map(e -> e.getKey()).distinct().count());
 
         return 0;
@@ -148,7 +162,8 @@ class Stat implements Callable<Integer> {
 
 @Command(name = "dump", mixinStandardHelpOptions = true)
 class Dump implements Callable<Integer> {
-    @Option(names = { "-t", "--type" }, description = "history type: ${COMPLETION-CANDIDATES}")
+    @Option(names = { "-t",
+            "--type" }, description = "history type: ${COMPLETION-CANDIDATES}")
     private final HistoryType type = HistoryType.COBRA;
 
     @Parameters(description = "history path")
@@ -179,12 +194,14 @@ class Dump implements Callable<Integer> {
 class Utils {
     static HistoryParser<?, ?> getParser(HistoryType type, Path path) {
         switch (type) {
-            case COBRA:
-                return new CobraHistoryLoader(path);
-            case DBCOP:
-                return new DBCopHistoryLoader(path);
-            default:
-                throw new UnimplementedError();
+        case COBRA:
+            return new CobraHistoryLoader(path);
+        case DBCOP:
+            return new DBCopHistoryLoader(path);
+        case TEXT:
+            return new TextHistoryLoader(path);
+        default:
+            throw new UnimplementedError();
         }
 
     }
@@ -202,7 +219,7 @@ class Utils {
 }
 
 enum HistoryType {
-    COBRA, DBCOP
+    COBRA, DBCOP, TEXT
 }
 
 enum HistoryTransformation {
