@@ -47,9 +47,6 @@ class Audit implements Callable<Integer> {
             "--type" }, description = "history type: ${COMPLETION-CANDIDATES}")
     private final HistoryType type = HistoryType.COBRA;
 
-    @Option(names = { "--gpu" }, description = "use GPU")
-    private final Boolean useGPU = false;
-
     @Option(names = { "--no-pruning" }, description = "disable pruning")
     private final Boolean noPruning = false;
 
@@ -65,7 +62,6 @@ class Audit implements Callable<Integer> {
     public Integer call() {
         var loader = Utils.getParser(type, path);
 
-        MatrixGraph.setEnableGPU(useGPU);
         Pruning.setEnablePruning(!noPruning);
         SIVerifier.setCoalesceConstraints(!noCoalescing);
 

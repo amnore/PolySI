@@ -43,24 +43,8 @@ tasks.register('buildMonoSAT') {
     }
 }
 
-tasks.register('buildCUDA') {
-    exec {
-        commandLine 'mkdir', '-p', "$buildDir/gpu"
-    }
-
-    exec {
-        commandLine 'nvcc',
-            '-Xcompiler', '-fPIC', '-shared', '-std=c++11', "-O3",
-            "-I${System.properties.'java.home'}/include",
-            "-I${System.properties.'java.home'}/include/linux",
-            '-o', "$buildDir/gpu/libgpumm.so",
-            "$projectDir/src/main/cuda/gpu_GPUmm.cu",
-            "-lcuda", "-lcudart", "-lcublas", "-lcusparse"
-    }
-}
-
 jar {
-    dependsOn 'buildMonoSAT', 'buildCUDA'
+    dependsOn 'buildMonoSAT'
 
     manifest {
         attributes 'Main-Class': 'Launcher'
@@ -73,9 +57,5 @@ jar {
 
     from {
         "$buildDir/monosat/libmonosat.so"
-    }
-
-    from {
-        "$buildDir/gpu/libgpumm.so"
     }
 }
