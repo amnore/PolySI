@@ -7,8 +7,8 @@ import util.Profiler;
 import graph.Edge;
 import graph.EdgeType;
 import graph.MatrixGraph;
-import java.util.Collection;
-import java.util.ArrayList;
+
+import java.util.*;
 import java.util.function.Function;
 
 import org.apache.commons.lang3.tuple.Pair;
@@ -16,13 +16,14 @@ import org.apache.commons.lang3.tuple.Pair;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.util.List;
-import java.util.Optional;
-
 public class Pruning {
     @Getter
     @Setter
     private static boolean enablePruning = true;
+
+    @Getter
+    @Setter
+    private static double stopThreshold = 0.01;
 
     static <KeyType, ValueType> boolean pruneConstraints(
             KnownGraph<KeyType, ValueType> knownGraph,
@@ -33,36 +34,25 @@ public class Pruning {
         }
 
         var profiler = Profiler.getInstance();
-
         profiler.startTick("SI_PRUNE");
-        int rounds = 1, solvedConstraints = 0;
-        while (true) {
-            var maxRounds = Integer
-                    .parseInt(System.getenv("SI_ROUNDS") == null ? "100"
-                            : System.getenv("SI_ROUNDS"));
-            if (rounds > maxRounds)
-                break;
 
+        int rounds = 1, solvedConstraints = 0, totalConstraints = constraints.size();
+        boolean hasCycle = false;
+        while (!hasCycle) {
             System.err.printf("Pruning round %d\n", rounds);
             var result = pruneConstraintsWithPostChecking(knownGraph,
                     constraints, history);
 
-            if (result.getRight()) {
-                profiler.endTick("SI_PRUNE");
-                System.err.printf(
-                        "Pruned %d rounds, solved %d constraints\n"
-                                + "After prune: graphA: %d, graphB: %d\n",
-                        rounds, solvedConstraints,
-                        knownGraph.getKnownGraphA().edges().size(),
-                        knownGraph.getKnownGraphB().edges().size());
-                return true;
-            } else if (result.getLeft() == 0) {
+            hasCycle = result.getRight();
+            solvedConstraints += result.getLeft();
+
+            if (result.getLeft() < stopThreshold * totalConstraints
+            || totalConstraints - solvedConstraints < stopThreshold * totalConstraints) {
                 break;
             }
-
-            solvedConstraints += result.getLeft();
             rounds++;
         }
+
         profiler.endTick("SI_PRUNE");
         System.err.printf(
                 "Pruned %d rounds, solved %d constraints\n"
@@ -70,7 +60,7 @@ public class Pruning {
                 rounds, solvedConstraints,
                 knownGraph.getKnownGraphA().edges().size(),
                 knownGraph.getKnownGraphB().edges().size());
-        return false;
+        return hasCycle;
     }
 
     private static <KeyType, ValueType> Pair<Integer, Boolean> pruneConstraintsWithPostChecking(
@@ -125,7 +115,7 @@ public class Pruning {
         }
         profiler.endTick("SI_PRUNE_POST_CHECK");
 
-        // System.err.printf("solved constraints: %s\n", solvedConstraints);
+        System.err.printf("solved %d constraints\n", solvedConstraints.size());
         // constraints.removeAll(solvedConstraints);
         // java removeAll has performance bugs; do it manually
         solvedConstraints.forEach(constraints::remove);
@@ -134,7 +124,7 @@ public class Pruning {
 
     private static <KeyType, ValueType> void addToKnownGraph(
             KnownGraph<KeyType, ValueType> knownGraph,
-            List<SIEdge<KeyType, ValueType>> edges) {
+            Collection<SIEdge<KeyType, ValueType>> edges) {
         for (var e : edges) {
             switch (e.getType()) {
             case WW:
@@ -153,7 +143,7 @@ public class Pruning {
     }
 
     private static <KeyType, ValueType> Optional<SIEdge<KeyType, ValueType>> checkConflict(
-            List<SIEdge<KeyType, ValueType>> edges,
+            Collection<SIEdge<KeyType, ValueType>> edges,
             MatrixGraph<Transaction<KeyType, ValueType>> reachability,
             KnownGraph<KeyType, ValueType> knownGraph) {
         for (var e : edges) {

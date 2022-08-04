@@ -8,8 +8,11 @@ import history.HistoryLoader;
 import history.Transaction;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.*;
 
+import lombok.Getter;
+import lombok.Setter;
 import org.apache.commons.lang3.tuple.Pair;
 
 import util.Profiler;
@@ -18,6 +21,10 @@ import util.TriConsumer;
 @SuppressWarnings("UnstableApiUsage")
 public class SIVerifier<KeyType, ValueType> {
     private final History<KeyType, ValueType> history;
+
+    @Getter
+    @Setter
+    private static boolean coalesceConstraints = false;
 
     public SIVerifier(HistoryLoader<KeyType, ValueType> loader) {
         history = loader.loadHistory();
@@ -52,7 +59,7 @@ public class SIVerifier<KeyType, ValueType> {
                 constraints.size(),
                 constraints.stream()
                         .map(c -> c.getEdges1().size() + c.getEdges2().size())
-                        .reduce(Integer::sum).orElse(0));
+                        .reduce(0, Integer::sum));
         profiler.endTick("ONESHOT_CONS");
 
         var hasLoop = Pruning.pruneConstraints(graph, constraints, history);
@@ -80,7 +87,7 @@ public class SIVerifier<KeyType, ValueType> {
                 txns.add(e.getLeft().target());
             });
             conflicts.getRight().forEach(c -> {
-                var addEdges = ((Consumer<List<SIEdge<KeyType, ValueType>>>) s -> s
+                var addEdges = ((Consumer<Collection<SIEdge<KeyType, ValueType>>>) s -> s
                         .forEach(e -> {
                             txns.add(e.getFrom());
                             txns.add(e.getTo());
@@ -116,7 +123,7 @@ public class SIVerifier<KeyType, ValueType> {
      * 2. C precedes A, add C ->(ww) A. For each transaction B such that C
      * ->(wr, K) A, add B ->(rw) A.
      */
-    private static <KeyType, ValueType> Set<SIConstraint<KeyType, ValueType>> generateConstraints(
+    private static <KeyType, ValueType> Collection<SIConstraint<KeyType, ValueType>> generateConstraintsCoalesce(
             History<KeyType, ValueType> history,
             KnownGraph<KeyType, ValueType> graph) {
         var readFrom = graph.getReadFrom();
@@ -141,7 +148,7 @@ public class SIVerifier<KeyType, ValueType> {
             }
         });
 
-        var constraintEdges = new HashMap<Pair<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>, List<SIEdge<KeyType, ValueType>>>();
+        var constraintEdges = new HashMap<Pair<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>, Collection<SIEdge<KeyType, ValueType>>>();
         forEachWriteSameKey.accept((a, c, key) -> {
             var addEdge = ((BiConsumer<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>) (
                     m, n) -> {
@@ -169,11 +176,76 @@ public class SIVerifier<KeyType, ValueType> {
         }
 
         var constraints = new HashSet<SIConstraint<KeyType, ValueType>>();
-        forEachWriteSameKey.accept((a, c, key) -> constraints
-                .add(new SIConstraint<>(constraintEdges.get(Pair.of(a, c)),
-                        constraintEdges.get(Pair.of(c, a)), a, c)));
+        var addedPairs = new HashSet<Pair<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>>();
+        AtomicInteger constraintId = new AtomicInteger();
+        forEachWriteSameKey.accept((a, c, key) -> {
+            if (addedPairs.contains(Pair.of(a, c)) || addedPairs.contains(Pair.of(c, a))) {
+                return;
+            }
+            addedPairs.add(Pair.of(a, c));
+            constraints.add(new SIConstraint<>(
+                constraintEdges.get(Pair.of(a, c)),
+                constraintEdges.get(Pair.of(c, a)),
+                a, c, constraintId.getAndIncrement()));
+        });
 
         return constraints;
     }
 
+    private static <KeyType, ValueType> Collection<SIConstraint<KeyType, ValueType>> generateConstraintsNoCoalesce(
+        History<KeyType, ValueType> history,
+        KnownGraph<KeyType, ValueType> graph) {
+        var readFrom = graph.getReadFrom();
+        var writes = new HashMap<KeyType, Set<Transaction<KeyType, ValueType>>>();
+
+        history.getEvents().stream()
+            .filter(e -> e.getType() == Event.EventType.WRITE)
+            .forEach(ev -> {
+                writes.computeIfAbsent(ev.getKey(), k -> new HashSet<>())
+                    .add(ev.getTransaction());
+            });
+
+        var constraints = new HashSet<SIConstraint<KeyType, ValueType>>();
+        var constraintId = 0;
+        for (var a : history.getTransactions()) {
+            for (var b : readFrom.successors(a)) {
+                for (var edge : readFrom.edgeValue(a, b).get()) {
+                    for (var c : writes.get(edge.getKey())) {
+                        if (a == c || b == c) {
+                            continue;
+                        }
+
+                        constraints.add(new SIConstraint<>(
+                            List.of(new SIEdge<>(a, c, EdgeType.WW, edge.getKey()), new SIEdge<>(b, c, EdgeType.RW, edge.getKey())),
+                            List.of(new SIEdge<>(c, a, EdgeType.WW, edge.getKey())),
+                            a, c, constraintId++));
+                    }
+                }
+            }
+        }
+        for (var write : writes.entrySet()) {
+            var list = new ArrayList<>(write.getValue());
+            for (int i = 0; i < list.size(); i++) {
+                for (int j = i + 1; j < list.size(); j++) {
+                    var a = list.get(i);
+                    var c = list.get(j);
+                    constraints.add(new SIConstraint<>(
+                        List.of(new SIEdge<>(a, c, EdgeType.WW, write.getKey())),
+                        List.of(new SIEdge<>(c, a, EdgeType.WW, write.getKey())),
+                        a, c, constraintId++));
+                }
+            }
+        }
+
+        return constraints;
+    }
+
+    private static <KeyType, ValueType> Collection<SIConstraint<KeyType, ValueType>> generateConstraints(
+        History<KeyType, ValueType> history,
+        KnownGraph<KeyType, ValueType> graph) {
+        if (coalesceConstraints) {
+            return generateConstraintsCoalesce(history, graph);
+        }
+        return generateConstraintsNoCoalesce(history, graph);
+    }
 }

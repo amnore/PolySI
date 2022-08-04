@@ -206,4 +206,65 @@ public class TestVerifier {
 
         assertTrue(new SIVerifier<>(h).audit());
     }
+
+    @Test
+    void testInt1() {
+        var loader = new TestLoader(
+            Set.of(0),
+            Map.of(0, List.of(0)),
+            Map.of(0, List.of(
+                Triple.of(WRITE, "x", 0),
+                Triple.of(WRITE, "x", 1),
+                Triple.of(READ, "x", 0)
+            ))
+        );
+
+        assertFalse(new SIVerifier<>(loader).audit());
+    }
+
+    @Test
+    void testInt2() {
+        var loader = new TestLoader(
+            Set.of(0),
+            Map.of(0, List.of(0)),
+            Map.of(0, List.of(
+                Triple.of(WRITE, "x", 0),
+                Triple.of(WRITE, "x", 1),
+                Triple.of(READ, "x", 1),
+                Triple.of(READ, "x", 0)
+            ))
+        );
+
+        assertFalse(new SIVerifier<>(loader).audit());
+    }
+
+    @Test
+    void testInt3() {
+        var loader = new TestLoader(
+            Set.of(0),
+            Map.of(0, List.of(0)),
+            Map.of(0, List.of(
+                Triple.of(WRITE, "x", 0),
+                Triple.of(READ, "x", 0),
+                Triple.of(WRITE, "x", 1),
+                Triple.of(READ, "x", 0)
+            ))
+        );
+
+        assertFalse(new SIVerifier<>(loader).audit());
+    }
+
+    @Test
+    void testInt4() {
+        var loader = new TestLoader(
+            Set.of(0),
+            Map.of(0, List.of(0)),
+            Map.of(0, List.of(
+                Triple.of(WRITE, "x", 1),
+                Triple.of(READ, "x", 0)
+            ))
+        );
+
+        assertFalse(new SIVerifier<>(loader).audit());
+    }
 }

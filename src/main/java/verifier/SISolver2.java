@@ -1,6 +1,8 @@
 package verifier;
 
 import java.util.*;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -11,9 +13,11 @@ import com.google.common.collect.HashBiMap;
 import com.google.common.collect.Streams;
 
 import com.google.common.graph.EndpointPair;
+import com.google.common.graph.Graph;
 import graph.Edge;
 import graph.EdgeType;
 import graph.KnownGraph;
+import graph.MatrixGraph;
 import history.History;
 import history.Transaction;
 import monosat.Lit;
@@ -24,7 +28,6 @@ import org.apache.commons.lang3.tuple.Pair;
 class SISolver2<KeyType, ValueType> {
     private Lit[][] graphABEdges;
     private Lit[][] graphACEdges;
-    private BiMap<Transaction<KeyType, ValueType>, Integer> nodeMap;
 
     private Solver solver = new Solver();
 
@@ -33,7 +36,7 @@ class SISolver2<KeyType, ValueType> {
 
     SISolver2(History<KeyType, ValueType> history,
             KnownGraph<KeyType, ValueType> precedenceGraph,
-            Set<SIConstraint<KeyType, ValueType>> constraints) {
+            Collection<SIConstraint<KeyType, ValueType>> constraints) {
         var nodeMap = new HashMap<Transaction<KeyType, ValueType>, Integer>();
         {
             int i = 0;
@@ -42,19 +45,23 @@ class SISolver2<KeyType, ValueType> {
             }
         }
 
-        var createLitMatrix = ((Supplier<Lit[][]>) () -> {
+        var createLitMatrix = ((Function<Supplier<Lit>, Lit[][]>) newLit -> {
             var n = history.getTransactions().size();
             var lits = new Lit[n][n];
             for (int j = 0; j < n; j++) {
                 for (int k = 0; k < n; k++) {
-                    lits[j][k] = new Lit(solver);
+                    lits[j][k] = newLit.get();
                 }
             }
 
             return lits;
         });
-        graphABEdges = createLitMatrix.get();
-        graphACEdges = createLitMatrix.get();
+        graphABEdges = createLitMatrix.apply(() -> {
+            var lit = new Lit(solver);
+            solver.setDecisionLiteral(lit, false);
+            return lit;
+        });
+        graphACEdges = createLitMatrix.apply(() -> Lit.False);
 
         for (var e : precedenceGraph.getKnownGraphA().edges()) {
             knownLits.add(graphABEdges[nodeMap.get(e.source())][nodeMap
@@ -66,60 +73,77 @@ class SISolver2<KeyType, ValueType> {
         }
 
         for (var c : constraints) {
+            var i = nodeMap.get(c.getWriteTransaction1());
+            var j = nodeMap.get(c.getWriteTransaction2());
             var either = Logic.implies(
-                    graphABEdges[nodeMap.get(c.getWriteTransaction1())][nodeMap
-                            .get(c.getWriteTransaction2())],
+                    graphABEdges[i][j],
                     c.getEdges1().stream()
                             .filter(e -> e.getType().equals(EdgeType.RW))
                             .map(e -> graphABEdges[nodeMap
                                     .get(e.getFrom())][nodeMap.get(e.getTo())])
                             .reduce(Lit.True, Logic::and));
             var or = Logic.implies(
-                    graphABEdges[nodeMap.get(c.getWriteTransaction2())][nodeMap
-                            .get(c.getWriteTransaction1())],
+                    graphABEdges[j][i],
                     c.getEdges2().stream()
                             .filter(e -> e.getType().equals(EdgeType.RW))
                             .map(e -> graphABEdges[nodeMap
                                     .get(e.getFrom())][nodeMap.get(e.getTo())])
                             .reduce(Lit.True, Logic::and));
 
-            constraintLits.add(Logic.or(either, or));
+            constraintLits.add(either);
+            constraintLits.add(or);
+            constraintLits.add(Logic.xor(graphABEdges[i][j], graphABEdges[j][i]));
+            solver.setDecisionLiteral(graphABEdges[i][j], true);
+            solver.setDecisionLiteral(graphABEdges[j][i], true);
         }
 
-        var edgesInA = constraints.stream()
-                .flatMap(c -> Stream.concat(c.getEdges1().stream(),
+        var collectEdges = ((BiFunction<Graph<Transaction<KeyType, ValueType>>, EdgeType, List<Pair<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>>>) (known, type) ->
+            Stream.concat(
+                known.edges().stream().map(e -> Pair.of(e.source(), e.target())),
+                constraints.stream()
+                    .flatMap(c -> Stream.concat(c.getEdges1().stream(),
                         c.getEdges2().stream()))
-                .filter(e -> e.getType().equals(EdgeType.WW))
-                .collect(Collectors.toList());
-        var edgesInB = constraints.stream()
-                .flatMap(c -> Stream.concat(c.getEdges1().stream(),
-                        c.getEdges2().stream()))
-                .filter(e -> e.getType().equals(EdgeType.RW))
-                .collect(Collectors.toList());
-
+                    .filter(e -> e.getType().equals(type))
+                    .map(e -> Pair.of(e.getFrom(), e.getTo())))
+                .collect(Collectors.toList())
+        );
+        var edgesInA = collectEdges.apply(precedenceGraph.getKnownGraphA().asGraph(), EdgeType.WW);
+        var edgesInB = collectEdges.apply(precedenceGraph.getKnownGraphB().asGraph(), EdgeType.RW);
+        for (var e1 : edgesInA) {
+            var vi = nodeMap.get(e1.getLeft());
+            var vj = nodeMap.get(e1.getRight());
+            graphACEdges[vi][vj] = Logic.or(
+                graphACEdges[vi][vj],
+                graphABEdges[vi][vj]
+            );
+            solver.setDecisionLiteral(graphACEdges[vi][vj], false);
+        }
         for (var e1 : edgesInA) {
             for (var e2 : edgesInB) {
-                if (!e1.getTo().equals(e2.getFrom())) {
+                if (!e1.getRight().equals(e2.getLeft())) {
                     continue;
                 }
 
-                var vi = nodeMap.get(e1.getFrom());
-                var vj = nodeMap.get(e1.getTo());
-                var vk = nodeMap.get(e2.getTo());
-                solver.assertEqual(graphACEdges[vi][vk],
-                        Logic.and(graphABEdges[vi][vj], graphABEdges[vj][vk]));
+                var vi = nodeMap.get(e1.getLeft());
+                var vj = nodeMap.get(e1.getRight());
+                var vk = nodeMap.get(e2.getRight());
+                graphACEdges[vi][vk] = Logic.or(
+                    graphACEdges[vi][vk],
+                    Logic.and(graphABEdges[vi][vj], graphABEdges[vj][vk])
+                );
+                solver.setDecisionLiteral(graphACEdges[vi][vk], false);
             }
         }
 
         var monoGraph = new monosat.Graph(solver);
         var nodes = new int[graphACEdges.length];
-
         for (int i = 0; i < graphACEdges.length; i++) {
             nodes[i] = monoGraph.addNode();
         }
         for (int i = 0; i < graphACEdges.length; i++) {
             for (int j = 0; j < graphACEdges[i].length; j++) {
                 var lit = monoGraph.addEdge(nodes[i], nodes[j]);
+                solver.setDecisionLiteral(lit, false);
                 solver.assertEqual(lit, graphACEdges[i][j]);
             }
         }

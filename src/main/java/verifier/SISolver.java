@@ -83,7 +83,7 @@ class SISolver<KeyType, ValueType> {
      */
     SISolver(History<KeyType, ValueType> history,
             KnownGraph<KeyType, ValueType> precedenceGraph,
-            Set<SIConstraint<KeyType, ValueType>> constraints) {
+            Collection<SIConstraint<KeyType, ValueType>> constraints) {
         var profiler = Profiler.getInstance();
 
         profiler.startTick("SI_SOLVER_GEN_GRAPH_A_B");
@@ -156,10 +156,10 @@ class SISolver<KeyType, ValueType> {
     }
 
     private void addConstraints(
-            Set<SIConstraint<KeyType, ValueType>> constraints,
+            Collection<SIConstraint<KeyType, ValueType>> constraints,
             MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> graphA,
             MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> graphB) {
-        var addEdges = ((Function<List<SIEdge<KeyType, ValueType>>, Pair<Lit, Lit>>) edges -> {
+        var addEdges = ((Function<Collection<SIEdge<KeyType, ValueType>>, Pair<Lit, Lit>>) edges -> {
             // all means all edges exists in the graph.
             // Similar for none.
             Lit all = Lit.True, none = Lit.True;

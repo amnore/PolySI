@@ -53,6 +53,9 @@ class Audit implements Callable<Integer> {
     @Option(names = { "--no-pruning" }, description = "disable pruning")
     private final Boolean noPruning = false;
 
+    @Option(names = { "--no-coalescing" }, description = "disable coalescing")
+    private final Boolean noCoalescing = false;
+
     @Parameters(description = "history path")
     private Path path;
 
@@ -64,19 +67,14 @@ class Audit implements Callable<Integer> {
 
         MatrixGraph.setEnableGPU(useGPU);
         Pruning.setEnablePruning(!noPruning);
+        SIVerifier.setCoalesceConstraints(!noCoalescing);
 
         profiler.startTick("ENTIRE_EXPERIMENT");
         var pass = true;
-        try {
-            var verifier = new SIVerifier<>(loader);
-
-            pass = verifier.audit();
-        } catch (Throwable e) {
-            pass = false;
-            e.printStackTrace();
-        }
-
+        var verifier = new SIVerifier<>(loader);
+        pass = verifier.audit();
         profiler.endTick("ENTIRE_EXPERIMENT");
+
         for (var p : profiler.getDurations()) {
             System.err.printf("%s: %dms\n", p.getKey(), p.getValue());
         }
