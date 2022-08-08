@@ -25,6 +25,8 @@ import monosat.Logic;
 import monosat.Solver;
 import org.apache.commons.lang3.tuple.Pair;
 
+import util.Profiler;
+
 class SISolver2<KeyType, ValueType> {
     private Lit[][] graphABEdges;
     private Lit[][] graphACEdges;
@@ -37,6 +39,9 @@ class SISolver2<KeyType, ValueType> {
     SISolver2(History<KeyType, ValueType> history,
             KnownGraph<KeyType, ValueType> precedenceGraph,
             Collection<SIConstraint<KeyType, ValueType>> constraints) {
+        var profiler = Profiler.getInstance();
+        profiler.startTick("SI_SOLVER2_CONSTRUCT");
+
         var nodeMap = new HashMap<Transaction<KeyType, ValueType>, Integer>();
         {
             int i = 0;
@@ -72,18 +77,25 @@ class SISolver2<KeyType, ValueType> {
                     .get(e.target())]);
         }
 
+        var impliesCNF = ((BiFunction<Lit, Collection<SIEdge<KeyType, ValueType>>, Lit>) (
+                lit, edges) -> edges.stream()
+                        .filter(e -> e.getType().equals(EdgeType.RW))
+                        .map(e -> graphABEdges[nodeMap.get(e.getFrom())][nodeMap
+                                .get(e.getTo())])
+                        .map(l -> Logic.or(Logic.not(lit), l))
+                        .reduce(Lit.True, Logic::and));
         for (var c : constraints) {
             var i = nodeMap.get(c.getWriteTransaction1());
             var j = nodeMap.get(c.getWriteTransaction2());
-            var either = Logic.implies(
-                    graphABEdges[i][j],
+            // var either = impliesCNF.apply(graphABEdges[i][j], c.getEdges1());
+            // var or = impliesCNF.apply(graphABEdges[j][i], c.getEdges2());
+            var either = Logic.implies(graphABEdges[i][j],
                     c.getEdges1().stream()
                             .filter(e -> e.getType().equals(EdgeType.RW))
                             .map(e -> graphABEdges[nodeMap
                                     .get(e.getFrom())][nodeMap.get(e.getTo())])
                             .reduce(Lit.True, Logic::and));
-            var or = Logic.implies(
-                    graphABEdges[j][i],
+            var or = Logic.implies(graphABEdges[j][i],
                     c.getEdges2().stream()
                             .filter(e -> e.getType().equals(EdgeType.RW))
                             .map(e -> graphABEdges[nodeMap
@@ -92,30 +104,41 @@ class SISolver2<KeyType, ValueType> {
 
             constraintLits.add(either);
             constraintLits.add(or);
-            constraintLits.add(Logic.xor(graphABEdges[i][j], graphABEdges[j][i]));
+            constraintLits
+                    .add(Logic.xor(graphABEdges[i][j], graphABEdges[j][i]));
             solver.setDecisionLiteral(graphABEdges[i][j], true);
             solver.setDecisionLiteral(graphABEdges[j][i], true);
         }
 
-        var collectEdges = ((BiFunction<Graph<Transaction<KeyType, ValueType>>, EdgeType, List<Pair<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>>>) (known, type) ->
-            Stream.concat(
-                known.edges().stream().map(e -> Pair.of(e.source(), e.target())),
-                constraints.stream()
-                    .flatMap(c -> Stream.concat(c.getEdges1().stream(),
-                        c.getEdges2().stream()))
-                    .filter(e -> e.getType().equals(type))
-                    .map(e -> Pair.of(e.getFrom(), e.getTo())))
-                .collect(Collectors.toList())
-        );
-        var edgesInA = collectEdges.apply(precedenceGraph.getKnownGraphA().asGraph(), EdgeType.WW);
-        var edgesInB = collectEdges.apply(precedenceGraph.getKnownGraphB().asGraph(), EdgeType.RW);
+        var matA = new MatrixGraph<>(
+                precedenceGraph.getKnownGraphA().asGraph());
+        var orderInSession = Utils.getOrderInSession(history);
+        var minimalAUnionC = Utils.reduceEdges(
+                matA.union(matA.composition(new MatrixGraph<>(
+                        precedenceGraph.getKnownGraphB().asGraph()))),
+                orderInSession);
+        var reachability = minimalAUnionC.reachability();
+        var collectEdges = ((BiFunction<Graph<Transaction<KeyType, ValueType>>, EdgeType, List<Pair<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>>>) (
+                known, type) -> Stream
+                        .concat(known.edges().stream()
+                                .map(e -> Pair.of(e.source(), e.target())),
+                                constraints.stream()
+                                        .flatMap(c -> Stream.concat(
+                                                c.getEdges1().stream(),
+                                                c.getEdges2().stream()))
+                                        .filter(e -> e.getType().equals(type))
+                                        .map(e -> Pair.of(e.getFrom(),
+                                                e.getTo())))
+                        .collect(Collectors.toList()));
+        var edgesInA = collectEdges
+                .apply(precedenceGraph.getKnownGraphA().asGraph(), EdgeType.WW);
+        var edgesInB = collectEdges
+                .apply(precedenceGraph.getKnownGraphB().asGraph(), EdgeType.RW);
         for (var e1 : edgesInA) {
             var vi = nodeMap.get(e1.getLeft());
             var vj = nodeMap.get(e1.getRight());
-            graphACEdges[vi][vj] = Logic.or(
-                graphACEdges[vi][vj],
-                graphABEdges[vi][vj]
-            );
+            graphACEdges[vi][vj] = Logic.or(graphACEdges[vi][vj],
+                    graphABEdges[vi][vj]);
             solver.setDecisionLiteral(graphACEdges[vi][vj], false);
         }
         for (var e1 : edgesInA) {
@@ -127,10 +150,8 @@ class SISolver2<KeyType, ValueType> {
                 var vi = nodeMap.get(e1.getLeft());
                 var vj = nodeMap.get(e1.getRight());
                 var vk = nodeMap.get(e2.getRight());
-                graphACEdges[vi][vk] = Logic.or(
-                    graphACEdges[vi][vk],
-                    Logic.and(graphABEdges[vi][vj], graphABEdges[vj][vk])
-                );
+                graphACEdges[vi][vk] = Logic.or(graphACEdges[vi][vk],
+                        Logic.and(graphABEdges[vi][vj], graphABEdges[vj][vk]));
                 solver.setDecisionLiteral(graphACEdges[vi][vk], false);
             }
         }
@@ -143,17 +164,18 @@ class SISolver2<KeyType, ValueType> {
         for (int i = 0; i < graphACEdges.length; i++) {
             for (int j = 0; j < graphACEdges[i].length; j++) {
                 var lit = monoGraph.addEdge(nodes[i], nodes[j]);
-                solver.setDecisionLiteral(lit, false);
                 solver.assertEqual(lit, graphACEdges[i][j]);
             }
         }
 
         solver.assertTrue(monoGraph.acyclic());
+
+        profiler.endTick("SI_SOLVER2_CONSTRUCT");
     }
 
     public boolean solve() {
         var lits = Stream.concat(knownLits.stream(), constraintLits.stream())
-            .collect(Collectors.toList());
+                .collect(Collectors.toList());
 
         return solver.solve(lits);
     }
