@@ -129,11 +129,11 @@ public class Pruning {
             switch (e.getType()) {
             case WW:
                 knownGraph.putEdge(e.getFrom(), e.getTo(),
-                        new Edge<KeyType>(EdgeType.WW, e.getKey()));
+                        new Edge<KeyType>(EdgeType.WW, e.getKeys()));
                 break;
             case RW:
                 knownGraph.putEdge(e.getFrom(), e.getTo(),
-                        new Edge<KeyType>(EdgeType.RW, e.getKey()));
+                        new Edge<KeyType>(EdgeType.RW, e.getKeys()));
                 break;
             default:
                 throw new Error(

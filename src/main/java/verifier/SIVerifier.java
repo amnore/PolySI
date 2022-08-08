@@ -10,11 +10,13 @@ import history.Transaction;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.*;
+import java.util.stream.Collectors;
 
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.lang3.tuple.Pair;
 
+import org.apache.commons.lang3.tuple.Triple;
 import util.Profiler;
 import util.TriConsumer;
 
@@ -148,13 +150,14 @@ public class SIVerifier<KeyType, ValueType> {
             }
         });
 
-        var constraintEdges = new HashMap<Pair<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>, Collection<SIEdge<KeyType, ValueType>>>();
+        var constraintEdges = new HashMap<Pair<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>, Map<Triple<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>, EdgeType>, Collection<KeyType>>>();
         forEachWriteSameKey.accept((a, c, key) -> {
             var addEdge = ((BiConsumer<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>) (
                     m, n) -> {
                 constraintEdges
-                        .computeIfAbsent(Pair.of(m, n), p -> new ArrayList<>())
-                        .add(new SIEdge<>(m, n, EdgeType.WW, key));
+                    .computeIfAbsent(Pair.of(m, n), p -> new HashMap<>())
+                    .computeIfAbsent(Triple.of(m, n, EdgeType.WW), t -> new ArrayList<>())
+                    .add(key);
             });
             addEdge.accept(a, c);
             addEdge.accept(c, a);
@@ -163,13 +166,16 @@ public class SIVerifier<KeyType, ValueType> {
         for (var a : history.getTransactions()) {
             for (var b : readFrom.successors(a)) {
                 for (var edge : readFrom.edgeValue(a, b).get()) {
-                    for (var c : writes.get(edge.getKey())) {
-                        if (a == c || b == c) {
-                            continue;
-                        }
+                    for (var k : edge.getKeys()) {
+                        for (var c : writes.get(k)) {
+                            if (a == c || b == c) {
+                                continue;
+                            }
 
-                        constraintEdges.get(Pair.of(a, c)).add(
-                                new SIEdge<>(b, c, EdgeType.RW, edge.getKey()));
+                            constraintEdges.get(Pair.of(a, c))
+                                .computeIfAbsent(Triple.of(b, c, EdgeType.RW), t -> new ArrayList<>())
+                                .add(k);
+                        }
                     }
                 }
             }
@@ -177,6 +183,10 @@ public class SIVerifier<KeyType, ValueType> {
 
         var constraints = new HashSet<SIConstraint<KeyType, ValueType>>();
         var addedPairs = new HashSet<Pair<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>>>();
+        var toEdges = ((Function<Map<Triple<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>, EdgeType>, Collection<KeyType>>, Collection<SIEdge<KeyType, ValueType>>>) m ->
+            m.entrySet().stream()
+                .map(e -> new SIEdge<>(e.getKey().getLeft(), e.getKey().getMiddle(), e.getKey().getRight(), e.getValue()))
+                .collect(Collectors.toList()));
         AtomicInteger constraintId = new AtomicInteger();
         forEachWriteSameKey.accept((a, c, key) -> {
             if (addedPairs.contains(Pair.of(a, c)) || addedPairs.contains(Pair.of(c, a))) {
@@ -184,8 +194,8 @@ public class SIVerifier<KeyType, ValueType> {
             }
             addedPairs.add(Pair.of(a, c));
             constraints.add(new SIConstraint<>(
-                constraintEdges.get(Pair.of(a, c)),
-                constraintEdges.get(Pair.of(c, a)),
+                toEdges.apply(constraintEdges.get(Pair.of(a, c))),
+                toEdges.apply(constraintEdges.get(Pair.of(c, a))),
                 a, c, constraintId.getAndIncrement()));
         });
 
@@ -210,15 +220,18 @@ public class SIVerifier<KeyType, ValueType> {
         for (var a : history.getTransactions()) {
             for (var b : readFrom.successors(a)) {
                 for (var edge : readFrom.edgeValue(a, b).get()) {
-                    for (var c : writes.get(edge.getKey())) {
-                        if (a == c || b == c) {
-                            continue;
-                        }
+                    for (var k : edge.getKeys()) {
+                        for (var c : writes.get(k)) {
+                            if (a == c || b == c) {
+                                continue;
+                            }
 
-                        constraints.add(new SIConstraint<>(
-                            List.of(new SIEdge<>(a, c, EdgeType.WW, edge.getKey()), new SIEdge<>(b, c, EdgeType.RW, edge.getKey())),
-                            List.of(new SIEdge<>(c, a, EdgeType.WW, edge.getKey())),
-                            a, c, constraintId++));
+                            var keys = List.of(k);
+                            constraints.add(new SIConstraint<>(
+                                List.of(new SIEdge<>(a, c, EdgeType.WW, keys), new SIEdge<>(b, c, EdgeType.RW, keys)),
+                                List.of(new SIEdge<>(c, a, EdgeType.WW, keys)),
+                                a, c, constraintId++));
+                        }
                     }
                 }
             }
@@ -229,9 +242,10 @@ public class SIVerifier<KeyType, ValueType> {
                 for (int j = i + 1; j < list.size(); j++) {
                     var a = list.get(i);
                     var c = list.get(j);
+                    var keys = List.of(write.getKey());
                     constraints.add(new SIConstraint<>(
-                        List.of(new SIEdge<>(a, c, EdgeType.WW, write.getKey())),
-                        List.of(new SIEdge<>(c, a, EdgeType.WW, write.getKey())),
+                        List.of(new SIEdge<>(a, c, EdgeType.WW, keys)),
+                        List.of(new SIEdge<>(c, a, EdgeType.WW, keys)),
                         a, c, constraintId++));
                 }
             }

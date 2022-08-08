@@ -3,11 +3,7 @@ package graph;
 import static history.Event.EventType.READ;
 import static history.Event.EventType.WRITE;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
 
 import com.google.common.graph.Graph;
 import com.google.common.graph.GraphBuilder;
@@ -50,7 +46,7 @@ public class KnownGraph<KeyType, ValueType> {
             for (var txn : session.getTransactions()) {
                 if (prevTxn != null) {
                     addEdge(knownGraphA, prevTxn, txn,
-                            new Edge<>(EdgeType.SO, null));
+                            new Edge<>(EdgeType.SO, List.of()));
                 }
                 prevTxn = txn;
             }
@@ -71,7 +67,7 @@ public class KnownGraph<KeyType, ValueType> {
                 return;
             }
 
-            putEdge(writeTxn, txn, new Edge<KeyType>(EdgeType.WR, ev.getKey()));
+            putEdge(writeTxn, txn, new Edge<>(EdgeType.WR, List.of(ev.getKey())));
         });
     }
 
@@ -94,10 +90,18 @@ public class KnownGraph<KeyType, ValueType> {
     private void addEdge(
             MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Edge<KeyType>>> graph,
             Transaction<KeyType, ValueType> u,
-            Transaction<KeyType, ValueType> v, Edge<KeyType> edge) {
+            Transaction<KeyType, ValueType> v,
+            Edge<KeyType> edge) {
         if (!graph.hasEdgeConnecting(u, v)) {
             graph.putEdgeValue(u, v, new ArrayList<>());
         }
-        graph.edgeValue(u, v).get().add(edge);
+
+        var list = (ArrayList<Edge<KeyType>>) graph.edgeValue(u, v).get();
+        var idx = list.indexOf(edge);
+        if (idx == -1) {
+            list.add(new Edge<>(edge.getType(), new ArrayList<>(edge.getKeys())));
+        } else {
+            list.get(idx).getKeys().addAll(edge.getKeys());
+        }
     }
 }
