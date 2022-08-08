@@ -10,6 +10,7 @@ import lombok.ToString;
 
 @Data
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@ToString(onlyExplicitlyIncluded = true)
 class SIConstraint<KeyType, ValueType> {
 
     // writeTransaction1 -> writeTransaction2

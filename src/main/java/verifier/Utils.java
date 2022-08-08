@@ -1,12 +1,6 @@
 package verifier;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -167,7 +161,7 @@ class Utils {
             Transaction<KeyType, ValueType> src,
             Transaction<KeyType, ValueType> dst, Lit lit) {
         if (!g.hasEdgeConnecting(src, dst)) {
-            g.putEdgeValue(src, dst, new ArrayList<>());
+            g.putEdgeValue(src, dst, new HashSet<>());
         }
         g.edgeValue(src, dst).get().add(lit);
     }

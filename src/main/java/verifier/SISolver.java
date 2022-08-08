@@ -1,11 +1,6 @@
 package verifier;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -15,6 +10,7 @@ import com.google.common.graph.EndpointPair;
 import com.google.common.graph.MutableValueGraph;
 import com.google.common.graph.ValueGraph;
 
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
 
@@ -40,13 +36,21 @@ class SISolver<KeyType, ValueType> {
     // for each constraint
     private final Map<Lit, SIConstraint<KeyType, ValueType>> constraintLiterals = new HashMap<>();
 
+    private final LazyLitMatrix<Transaction<KeyType, ValueType>> graphALits = new LazyLitMatrix<>(solver);
+    private final LazyLitMatrix<Transaction<KeyType, ValueType>> graphBLits = new LazyLitMatrix<>(solver);
+
     boolean solve() {
+        var profiler = Profiler.getInstance();
+
+        profiler.startTick("SI_SOLVER_SOLVE");
         var lits = Stream
                 .concat(knownLiterals.keySet().stream(),
                         constraintLiterals.keySet().stream())
                 .collect(Collectors.toList());
+        var result = solver.solve(lits);
+        profiler.endTick("SI_SOLVER_SOLVE");
 
-        return solver.solve(lits);
+        return result;
     }
 
     Pair<Collection<Pair<EndpointPair<Transaction<KeyType, ValueType>>, Collection<Edge<KeyType>>>>, Collection<SIConstraint<KeyType, ValueType>>> getConflicts() {
@@ -88,9 +92,9 @@ class SISolver<KeyType, ValueType> {
 
         profiler.startTick("SI_SOLVER_GEN_GRAPH_A_B");
         var graphA = createKnownGraph(history,
-                precedenceGraph.getKnownGraphA());
+                precedenceGraph.getKnownGraphA(), graphALits);
         var graphB = createKnownGraph(history,
-                precedenceGraph.getKnownGraphB());
+                precedenceGraph.getKnownGraphB(), graphBLits);
         profiler.endTick("SI_SOLVER_GEN_GRAPH_A_B");
 
         profiler.startTick("SI_SOLVER_GEN_GRAPH_A_UNION_C");
@@ -144,12 +148,15 @@ class SISolver<KeyType, ValueType> {
 
     private MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> createKnownGraph(
             History<KeyType, ValueType> history,
-            ValueGraph<Transaction<KeyType, ValueType>, Collection<Edge<KeyType>>> knownGraph) {
+            ValueGraph<Transaction<KeyType, ValueType>, Collection<Edge<KeyType>>> knownGraph,
+            LazyLitMatrix<Transaction<KeyType, ValueType>> litMatrix) {
         var g = Utils.createEmptyGraph(history);
         for (var e : knownGraph.edges()) {
             var lit = new Lit(solver);
+            var edgeLit = litMatrix.get(e.source(), e.target());
+            solver.assertEqual(lit, edgeLit);
             knownLiterals.put(lit, Pair.of(e, knownGraph.edgeValue(e).get()));
-            Utils.addEdge(g, e.source(), e.target(), lit);
+            Utils.addEdge(g, e.source(), e.target(), edgeLit);
         }
 
         return g;
@@ -162,23 +169,24 @@ class SISolver<KeyType, ValueType> {
         var addEdges = ((Function<Collection<SIEdge<KeyType, ValueType>>, Pair<Lit, Lit>>) edges -> {
             // all means all edges exists in the graph.
             // Similar for none.
-            Lit all = Lit.True, none = Lit.True;
+            var allLits = new ArrayList<Lit>();
+            var noneLits = new ArrayList<Lit>();
             for (var e : edges) {
-                var lit = new Lit(solver);
-                var not = Logic.not(lit);
-                all = Logic.and(all, lit);
-                none = Logic.and(none, not);
-                solver.setDecisionLiteral(lit, false);
-                solver.setDecisionLiteral(not, false);
-                solver.setDecisionLiteral(all, false);
-                solver.setDecisionLiteral(none, false);
-
+                Lit lit;
                 if (e.getType().equals(EdgeType.WW)) {
+                    lit = graphALits.get(e.getFrom(), e.getTo());
                     Utils.addEdge(graphA, e.getFrom(), e.getTo(), lit);
                 } else {
+                    lit = graphBLits.get(e.getFrom(), e.getTo());
                     Utils.addEdge(graphB, e.getFrom(), e.getTo(), lit);
                 }
+
+                allLits.add(lit);
+                noneLits.add(Logic.not(lit));
             }
+
+            var all = Logic.and(allLits.toArray(Lit[]::new));
+            var none = Logic.and(noneLits.toArray(Lit[]::new));
             return Pair.of(all, none);
         });
 
@@ -190,5 +198,15 @@ class SISolver<KeyType, ValueType> {
                     .put(Logic.or(Logic.and(p1.getLeft(), p2.getRight()),
                             Logic.and(p2.getLeft(), p1.getRight())), c);
         }
+    }
+}
+
+@RequiredArgsConstructor
+class LazyLitMatrix<T> {
+    private final Map<Pair<T, T>, Lit> lits = new HashMap<>();
+    private final Solver solver;
+
+    public Lit get(T a, T b) {
+        return lits.computeIfAbsent(Pair.of(a, b), p -> new Lit(solver));
     }
 }
