@@ -36,8 +36,10 @@ class SISolver<KeyType, ValueType> {
     // for each constraint
     private final Map<Lit, SIConstraint<KeyType, ValueType>> constraintLiterals = new HashMap<>();
 
-    private final LazyLitMatrix<Transaction<KeyType, ValueType>> graphALits = new LazyLitMatrix<>(solver);
-    private final LazyLitMatrix<Transaction<KeyType, ValueType>> graphBLits = new LazyLitMatrix<>(solver);
+    private final LazyLitMatrix<Transaction<KeyType, ValueType>> graphALits = new LazyLitMatrix<>(
+            solver);
+    private final LazyLitMatrix<Transaction<KeyType, ValueType>> graphBLits = new LazyLitMatrix<>(
+            solver);
 
     boolean solve() {
         var profiler = Profiler.getInstance();
@@ -91,10 +93,10 @@ class SISolver<KeyType, ValueType> {
         var profiler = Profiler.getInstance();
 
         profiler.startTick("SI_SOLVER_GEN_GRAPH_A_B");
-        var graphA = createKnownGraph(history,
-                precedenceGraph.getKnownGraphA(), graphALits);
-        var graphB = createKnownGraph(history,
-                precedenceGraph.getKnownGraphB(), graphBLits);
+        var graphA = createKnownGraph(history, precedenceGraph.getKnownGraphA(),
+                graphALits);
+        var graphB = createKnownGraph(history, precedenceGraph.getKnownGraphB(),
+                graphBLits);
         profiler.endTick("SI_SOLVER_GEN_GRAPH_A_B");
 
         profiler.startTick("SI_SOLVER_GEN_GRAPH_A_UNION_C");
@@ -109,18 +111,18 @@ class SISolver<KeyType, ValueType> {
         var knownEdges = Utils.getKnownEdges(graphA, graphB, minimalAUnionC);
 
         addConstraints(constraints, graphA, graphB);
+        List.of(Pair.of('A', graphA), Pair.of('B', graphB)).forEach(p -> {
+            var g = p.getRight();
+            var edgesSize = g.edges().stream()
+                    .mapToInt(e -> g.edgeValue(e).get().size()).sum();
+            System.err.printf("Graph %s edges count: %d\n", p.getLeft(),
+                    edgesSize);
+        });
+
         var unknownEdges = Utils.getUnknownEdges(graphA, graphB, reachability,
                 solver);
         profiler.endTick("SI_SOLVER_GEN_GRAPH_A_UNION_C");
 
-        List.of(Pair.of('A', graphA), Pair.of('B', graphB)).forEach(p -> {
-            var g = p.getRight();
-            var edgesSize = g.edges().stream()
-                    .map(e -> g.edgeValue(e).get().size()).reduce(Integer::sum)
-                    .orElse(0);
-            System.err.printf("Graph %s edges count: %d\n", p.getLeft(),
-                    edgesSize);
-        });
         System.err.printf("Graph A union C edges count: %d\n",
                 knownEdges.size() + unknownEdges.size());
 

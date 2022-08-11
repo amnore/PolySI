@@ -1,6 +1,10 @@
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.concurrent.Callable;
+import java.util.stream.Collectors;
+
+import org.apache.commons.lang3.tuple.Pair;
 
 import history.Event;
 import history.Event.EventType;
@@ -139,17 +143,26 @@ class Stat implements Callable<Integer> {
         var history = loader.loadHistory();
 
         var events = history.getEvents();
+        var writeFreq = events.stream()
+                .collect(Collectors.toMap(ev -> ev.getKey(),
+                        ev -> ev.getType().equals(EventType.WRITE) ? 1 : 0,
+                        Integer::sum))
+                .entrySet().stream()
+                .sorted((l, r) -> Integer.compare(l.getValue(), r.getValue()))
+                .collect(Collectors.toCollection(ArrayList::new));
+
         System.out.printf("Sessions: %d\n"
                 + "Transactions: %d, read-only: %d, write-only: %d\n"
-                + "Events: total %d, read %d, write %d\n" + "Variables: %d\n",
+                + "Events: total %d, read %d, write %d\n" + "Variables: %d\n"
+                + "Writes per key: 20%%: %d, median: %d, 80%%: %d\n",
                 history.getSessions().size(), history.getTransactions().size(),
                 history.getTransactions().stream()
                         .filter(txn -> txn.getEvents().stream()
                                 .allMatch(ev -> ev.getType() == EventType.READ))
                         .count(),
                 history.getTransactions().stream()
-                        .filter(txn -> txn.getEvents().stream()
-                                .allMatch(ev -> ev.getType() == EventType.WRITE))
+                        .filter(txn -> txn.getEvents().stream().allMatch(
+                                ev -> ev.getType() == EventType.WRITE))
                         .count(),
                 events.size(),
                 events.stream().filter(e -> e.getType() == Event.EventType.READ)
@@ -157,7 +170,10 @@ class Stat implements Callable<Integer> {
                 events.stream()
                         .filter(e -> e.getType() == Event.EventType.WRITE)
                         .count(),
-                events.stream().map(e -> e.getKey()).distinct().count());
+                events.stream().map(e -> e.getKey()).distinct().count(),
+                writeFreq.get((int) (writeFreq.size() * 0.2)).getValue(),
+                writeFreq.get((int) (writeFreq.size() * 0.5)).getValue(),
+                writeFreq.get((int) (writeFreq.size() * 0.8)).getValue());
 
         return 0;
     }
