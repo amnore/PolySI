@@ -148,13 +148,15 @@ class Stat implements Callable<Integer> {
                         ev -> ev.getType().equals(EventType.WRITE) ? 1 : 0,
                         Integer::sum))
                 .entrySet().stream()
-                .sorted((l, r) -> Integer.compare(l.getValue(), r.getValue()))
+                .collect(Collectors.toMap(w -> w.getValue(), w -> 1,
+                        Integer::sum))
+                .entrySet().stream()
+                .sorted((p, q) -> Integer.compare(p.getKey(), q.getKey()))
                 .collect(Collectors.toCollection(ArrayList::new));
 
         System.out.printf("Sessions: %d\n"
                 + "Transactions: %d, read-only: %d, write-only: %d\n"
-                + "Events: total %d, read %d, write %d\n" + "Variables: %d\n"
-                + "Writes per key: 20%%: %d, median: %d, 80%%: %d\n",
+                + "Events: total %d, read %d, write %d\n" + "Variables: %d\n",
                 history.getSessions().size(), history.getTransactions().size(),
                 history.getTransactions().stream()
                         .filter(txn -> txn.getEvents().stream()
@@ -170,10 +172,32 @@ class Stat implements Callable<Integer> {
                 events.stream()
                         .filter(e -> e.getType() == Event.EventType.WRITE)
                         .count(),
-                events.stream().map(e -> e.getKey()).distinct().count(),
-                writeFreq.get((int) (writeFreq.size() * 0.2)).getValue(),
-                writeFreq.get((int) (writeFreq.size() * 0.5)).getValue(),
-                writeFreq.get((int) (writeFreq.size() * 0.8)).getValue());
+                events.stream().map(e -> e.getKey()).distinct().count());
+
+        System.out.println("(writes, #keys):");
+        int min = writeFreq.get(0).getKey(),
+                max = writeFreq.get(writeFreq.size() - 1).getKey();
+        double start = writeFreq.size() == 1 ? writeFreq.get(0).getKey()
+                : writeFreq.get(1).getKey(), step = (max - min) / 8.0;
+        int count = 0;
+        writeFreq.add(Pair.of(
+                writeFreq.get(writeFreq.size() - 1).getKey() + (int) step + 1,
+                0));
+        System.out.printf("%d: %d\n", writeFreq.get(0).getKey(),
+                writeFreq.get(0).getValue());
+        for (int i = 2; i < writeFreq.size(); i++) {
+            var p = writeFreq.get(i);
+            if (p.getKey() <= start + step) {
+                count += p.getValue();
+            } else {
+                System.out.printf("%.0f...%.0f: %d\n", Math.ceil(start),
+                        Math.floor(start + step), count);
+                count = p.getValue();
+                while (start + step < p.getKey()) {
+                    start += step;
+                }
+            }
+        }
 
         return 0;
     }
