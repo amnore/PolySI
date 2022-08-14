@@ -1,6 +1,10 @@
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.concurrent.Callable;
+import java.util.stream.Collectors;
+
+import org.apache.commons.lang3.tuple.Pair;
 
 import history.Event;
 import history.Event.EventType;
@@ -139,6 +143,17 @@ class Stat implements Callable<Integer> {
         var history = loader.loadHistory();
 
         var events = history.getEvents();
+        var writeFreq = events.stream()
+                .collect(Collectors.toMap(ev -> ev.getKey(),
+                        ev -> ev.getType().equals(EventType.WRITE) ? 1 : 0,
+                        Integer::sum))
+                .entrySet().stream()
+                .collect(Collectors.toMap(w -> w.getValue(), w -> 1,
+                        Integer::sum))
+                .entrySet().stream()
+                .sorted((p, q) -> Integer.compare(p.getKey(), q.getKey()))
+                .collect(Collectors.toCollection(ArrayList::new));
+
         System.out.printf("Sessions: %d\n"
                 + "Transactions: %d, read-only: %d, write-only: %d\n"
                 + "Events: total %d, read %d, write %d\n" + "Variables: %d\n",
@@ -158,6 +173,31 @@ class Stat implements Callable<Integer> {
                         .filter(e -> e.getType() == Event.EventType.WRITE)
                         .count(),
                 events.stream().map(e -> e.getKey()).distinct().count());
+
+        System.out.println("(writes, #keys):");
+        int min = writeFreq.get(0).getKey(),
+                max = writeFreq.get(writeFreq.size() - 1).getKey();
+        double start = writeFreq.size() == 1 ? writeFreq.get(0).getKey()
+                : writeFreq.get(1).getKey(), step = (max - min) / 8.0;
+        int count = 0;
+        writeFreq.add(Pair.of(
+                writeFreq.get(writeFreq.size() - 1).getKey() + (int) step + 1,
+                0));
+        System.out.printf("%d: %d\n", writeFreq.get(0).getKey(),
+                writeFreq.get(0).getValue());
+        for (int i = 2; i < writeFreq.size(); i++) {
+            var p = writeFreq.get(i);
+            if (p.getKey() <= start + step) {
+                count += p.getValue();
+            } else {
+                System.out.printf("%.0f...%.0f: %d\n", Math.ceil(start),
+                        Math.floor(start + step), count);
+                count = p.getValue();
+                while (start + step < p.getKey()) {
+                    start += step;
+                }
+            }
+        }
 
         return 0;
     }
