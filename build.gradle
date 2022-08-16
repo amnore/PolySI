@@ -3,9 +3,9 @@ plugins {
     id "io.freefair.lombok" version '6.3.0'
 }
 
-group = 'CobraVerifier'
-version = '0.0.1-SNAPSHOT'
-description = 'CobraVerifier'
+group = 'PolySI'
+version = '1.0.0-SNAPSHOT'
+description = 'PolySI'
 
 application {
     mainClass = 'Launcher'
