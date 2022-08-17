@@ -46,8 +46,8 @@ public class Pruning {
             hasCycle = result.getRight();
             solvedConstraints += result.getLeft();
 
-            if (result.getLeft() < stopThreshold * totalConstraints
-            || totalConstraints - solvedConstraints < stopThreshold * totalConstraints) {
+            if (result.getLeft() <= stopThreshold * totalConstraints
+                || totalConstraints - solvedConstraints <= stopThreshold * totalConstraints) {
                 break;
             }
             rounds++;
