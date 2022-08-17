@@ -21,10 +21,6 @@ public class Pruning {
     @Setter
     private static boolean enablePruning = true;
 
-    @Getter
-    @Setter
-    private static double stopThreshold = 0.01;
-
     static <KeyType, ValueType> boolean pruneConstraints(
             KnownGraph<KeyType, ValueType> knownGraph,
             Collection<SIConstraint<KeyType, ValueType>> constraints,
@@ -46,8 +42,7 @@ public class Pruning {
             hasCycle = result.getRight();
             solvedConstraints += result.getLeft();
 
-            if (result.getLeft() < stopThreshold * totalConstraints
-            || totalConstraints - solvedConstraints < stopThreshold * totalConstraints) {
+            if (result.getLeft() == 0) {
                 break;
             }
             rounds++;
