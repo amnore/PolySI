@@ -66,6 +66,13 @@ public class SIVerifier<KeyType, ValueType> {
         if (hasLoop) {
             System.err.printf("Loop found in pruning\n");
         }
+        System.err.printf(
+                "After Prune:\n" +
+                "Constraints count: %d\nTotal edges in constraints: %d\n",
+                constraints.size(),
+                constraints.stream()
+                        .map(c -> c.getEdges1().size() + c.getEdges2().size())
+                        .reduce(0, Integer::sum));
 
         profiler.startTick("ONESHOT_SOLVE");
         var solver = new SISolver<>(history, graph, constraints);

@@ -172,6 +172,9 @@ class Utils {
         g.edgeValue(src, dst).get().add(lit);
     }
 
+    /*
+     * Return a new graph that has the same reachability as {graph} but with fewer edges
+     */
     static <KeyType, ValueType> MatrixGraph<Transaction<KeyType, ValueType>> reduceEdges(
             MatrixGraph<Transaction<KeyType, ValueType>> graph,
             Map<Transaction<KeyType, ValueType>, Integer> orderInSession) {

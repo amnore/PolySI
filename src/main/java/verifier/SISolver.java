@@ -41,12 +41,17 @@ class SISolver<KeyType, ValueType> {
     private final Map<Lit, SIConstraint<KeyType, ValueType>> constraintLiterals = new HashMap<>();
 
     boolean solve() {
+        var profiler = Profiler.getInstance();
         var lits = Stream
                 .concat(knownLiterals.keySet().stream(),
                         constraintLiterals.keySet().stream())
                 .collect(Collectors.toList());
 
-        return solver.solve(lits);
+        profiler.startTick("SI_SOLVER_SOLVE");
+        var result = solver.solve(lits);
+        profiler.endTick("SI_SOLVER_SOLVE");
+
+        return result;
     }
 
     Pair<Collection<Pair<EndpointPair<Transaction<KeyType, ValueType>>, Collection<Edge<KeyType>>>>, Collection<SIConstraint<KeyType, ValueType>>> getConflicts() {
@@ -86,6 +91,7 @@ class SISolver<KeyType, ValueType> {
             Collection<SIConstraint<KeyType, ValueType>> constraints) {
         var profiler = Profiler.getInstance();
 
+        profiler.startTick("SI_SOLVER_GEN");
         profiler.startTick("SI_SOLVER_GEN_GRAPH_A_B");
         var graphA = createKnownGraph(history,
                 precedenceGraph.getKnownGraphA());
@@ -93,7 +99,7 @@ class SISolver<KeyType, ValueType> {
                 precedenceGraph.getKnownGraphB());
         profiler.endTick("SI_SOLVER_GEN_GRAPH_A_B");
 
-        profiler.startTick("SI_SOLVER_GEN_GRAPH_A_UNION_C");
+        profiler.startTick("SI_SOLVER_GEN_REACHABILITY");
         var matA = new MatrixGraph<>(graphA.asGraph());
         var orderInSession = Utils.getOrderInSession(history);
         var minimalAUnionC = Utils.reduceEdges(
@@ -101,9 +107,10 @@ class SISolver<KeyType, ValueType> {
                         matA.composition(new MatrixGraph<>(graphB.asGraph()))),
                 orderInSession);
         var reachability = minimalAUnionC.reachability();
+        profiler.endTick("SI_SOLVER_GEN_REACHABILITY");
 
+        profiler.startTick("SI_SOLVER_GEN_GRAPH_A_UNION_C");
         var knownEdges = Utils.getKnownEdges(graphA, graphB, minimalAUnionC);
-
         addConstraints(constraints, graphA, graphB);
         var unknownEdges = Utils.getUnknownEdges(graphA, graphB, reachability,
                 solver);
@@ -137,9 +144,10 @@ class SISolver<KeyType, ValueType> {
 
         knownEdges.forEach(addToMonoSAT);
         unknownEdges.forEach(addToMonoSAT);
-        profiler.endTick("SI_SOLVER_GEN_MONO_GRAPH");
-
         solver.assertTrue(monoGraph.acyclic());
+
+        profiler.endTick("SI_SOLVER_GEN_MONO_GRAPH");
+        profiler.endTick("SI_SOLVER_GEN");
     }
 
     private MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> createKnownGraph(
@@ -172,6 +180,7 @@ class SISolver<KeyType, ValueType> {
                 solver.setDecisionLiteral(not, false);
                 solver.setDecisionLiteral(all, false);
                 solver.setDecisionLiteral(none, false);
+
 
                 if (e.getType().equals(EdgeType.WW)) {
                     Utils.addEdge(graphA, e.getFrom(), e.getTo(), lit);
