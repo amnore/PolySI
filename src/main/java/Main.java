@@ -45,7 +45,7 @@ public class Main implements Callable<Integer> {
     }
 }
 
-@Command(name = "audit", mixinStandardHelpOptions = true)
+@Command(name = "audit", mixinStandardHelpOptions = true, description = "Verify a history")
 class Audit implements Callable<Integer> {
     @Option(names = { "-t",
             "--type" }, description = "history type: ${COMPLETION-CANDIDATES}")
@@ -89,7 +89,7 @@ class Audit implements Callable<Integer> {
     }
 }
 
-@Command(name = "convert", mixinStandardHelpOptions = true)
+@Command(name = "convert", mixinStandardHelpOptions = true, description = "Convert a history between different formats")
 class Convert implements Callable<Integer> {
     @Option(names = { "-f",
             "--from" }, description = "input history type: ${COMPLETION-CANDIDATES}")
@@ -128,7 +128,7 @@ class Convert implements Callable<Integer> {
     }
 }
 
-@Command(name = "stat", mixinStandardHelpOptions = true)
+@Command(name = "stat", mixinStandardHelpOptions = true, description = "Print some statistics of a history")
 class Stat implements Callable<Integer> {
     @Option(names = { "-t",
             "--type" }, description = "history type: ${COMPLETION-CANDIDATES}")
@@ -203,7 +203,7 @@ class Stat implements Callable<Integer> {
     }
 }
 
-@Command(name = "dump", mixinStandardHelpOptions = true)
+@Command(name = "dump", mixinStandardHelpOptions = true, description = "Print a history to stdout")
 class Dump implements Callable<Integer> {
     @Option(names = { "-t",
             "--type" }, description = "history type: ${COMPLETION-CANDIDATES}")
