@@ -85,6 +85,14 @@ class Utils {
         return true;
     }
 
+    /**
+     * Collect unknown edges
+     *
+     * @param graphA graph A containing known and unknown edges
+     * @param graphB graph B containing known and unknown edges
+     * @param reachability known reachable node pairs. Edges that connect reachable pairs are not collected
+     * @param solver SAT solver
+     */
     static <KeyType, ValueType> List<Triple<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>, Lit>> getUnknownEdges(
             MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> graphA,
             MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> graphB,
@@ -118,11 +126,18 @@ class Utils {
         return edges;
     }
 
+    /**
+     * Collect known edges in A union C
+     *
+     * @param graphA known graph A
+     * @param graphB known graph B
+     * @param AC the graph containing the edges to collect
+     */
     static <KeyType, ValueType> List<Triple<Transaction<KeyType, ValueType>, Transaction<KeyType, ValueType>, Lit>> getKnownEdges(
             MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> graphA,
             MutableValueGraph<Transaction<KeyType, ValueType>, Collection<Lit>> graphB,
-            MatrixGraph<Transaction<KeyType, ValueType>> minimalAUnionC) {
-        return minimalAUnionC.edges().stream().map(e -> {
+            MatrixGraph<Transaction<KeyType, ValueType>> AC) {
+        return AC.edges().stream().map(e -> {
             var n = e.source();
             var m = e.target();
             var firstEdge = ((Function<Optional<Collection<Lit>>, Lit>) c -> c
@@ -173,7 +188,7 @@ class Utils {
     }
 
     /*
-     * Return a new graph that has the same reachability as {graph} but with fewer edges
+     * Delete edges in a way that preserves reachability
      */
     static <KeyType, ValueType> MatrixGraph<Transaction<KeyType, ValueType>> reduceEdges(
             MatrixGraph<Transaction<KeyType, ValueType>> graph,

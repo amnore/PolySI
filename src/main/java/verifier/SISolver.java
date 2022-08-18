@@ -100,17 +100,20 @@ class SISolver<KeyType, ValueType> {
         profiler.endTick("SI_SOLVER_GEN_GRAPH_A_B");
 
         profiler.startTick("SI_SOLVER_GEN_REACHABILITY");
+        // The reachability information is used to delete unneeded edges from
+        // the generated graph
         var matA = new MatrixGraph<>(graphA.asGraph());
         var orderInSession = Utils.getOrderInSession(history);
-        var minimalAUnionC = Utils.reduceEdges(
+        var matAC = Utils.reduceEdges(
                 matA.union(
                         matA.composition(new MatrixGraph<>(graphB.asGraph()))),
                 orderInSession);
-        var reachability = minimalAUnionC.reachability();
+        var reachability = matAC.reachability();
         profiler.endTick("SI_SOLVER_GEN_REACHABILITY");
 
         profiler.startTick("SI_SOLVER_GEN_GRAPH_A_UNION_C");
-        var knownEdges = Utils.getKnownEdges(graphA, graphB, minimalAUnionC);
+        // Known edges and unknown edges are collected separately
+        var knownEdges = Utils.getKnownEdges(graphA, graphB, matAC);
         addConstraints(constraints, graphA, graphB);
         var unknownEdges = Utils.getUnknownEdges(graphA, graphB, reachability,
                 solver);
