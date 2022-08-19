@@ -1,6 +1,7 @@
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 
@@ -12,6 +13,7 @@ import history.History;
 import history.HistoryLoader;
 import history.HistoryParser;
 import history.HistoryTransformer;
+import history.Transaction;
 import history.loaders.CobraHistoryLoader;
 import history.loaders.DBCopHistoryLoader;
 import history.loaders.TextHistoryLoader;
@@ -142,6 +144,7 @@ class Stat implements Callable<Integer> {
         var loader = Utils.getParser(type, path);
         var history = loader.loadHistory();
 
+        var txns = history.getTransactions();
         var events = history.getEvents();
         var writeFreq = events.stream()
                 .collect(Collectors.toMap(ev -> ev.getKey(),
@@ -155,17 +158,18 @@ class Stat implements Callable<Integer> {
                 .collect(Collectors.toCollection(ArrayList::new));
 
         System.out.printf("Sessions: %d\n"
-                + "Transactions: %d, read-only: %d, write-only: %d\n"
+                + "Transactions: %d, read-only: %d, write-only: %d, read-modify-write: %d\n"
                 + "Events: total %d, read %d, write %d\n" + "Variables: %d\n",
                 history.getSessions().size(), history.getTransactions().size(),
-                history.getTransactions().stream()
+                txns.stream()
                         .filter(txn -> txn.getEvents().stream()
                                 .allMatch(ev -> ev.getType() == EventType.READ))
                         .count(),
-                history.getTransactions().stream()
-                        .filter(txn -> txn.getEvents().stream()
-                                .allMatch(ev -> ev.getType() == EventType.WRITE))
+                txns.stream()
+                        .filter(txn -> txn.getEvents().stream().allMatch(
+                                ev -> ev.getType() == EventType.WRITE))
                         .count(),
+                txns.stream().filter(Stat::isReadModifyWriteTxn).count(),
                 events.size(),
                 events.stream().filter(e -> e.getType() == Event.EventType.READ)
                         .count(),
@@ -177,29 +181,38 @@ class Stat implements Callable<Integer> {
         System.out.println("(writes, #keys):");
         int min = writeFreq.get(0).getKey(),
                 max = writeFreq.get(writeFreq.size() - 1).getKey();
-        double start = writeFreq.size() == 1 ? writeFreq.get(0).getKey()
-                : writeFreq.get(1).getKey(), step = (max - min) / 8.0;
-        int count = 0;
-        writeFreq.add(Pair.of(
-                writeFreq.get(writeFreq.size() - 1).getKey() + (int) step + 1,
-                0));
-        System.out.printf("%d: %d\n", writeFreq.get(0).getKey(),
-                writeFreq.get(0).getValue());
-        for (int i = 2; i < writeFreq.size(); i++) {
-            var p = writeFreq.get(i);
-            if (p.getKey() <= start + step) {
-                count += p.getValue();
-            } else {
-                System.out.printf("%.0f...%.0f: %d\n", Math.ceil(start),
-                        Math.floor(start + step), count);
-                count = p.getValue();
-                while (start + step < p.getKey()) {
-                    start += step;
-                }
-            }
+        int step = Math.max((max - min) / 8, 1), lowerBound;
+
+        if (writeFreq.get(0).getKey() == 1) {
+            System.out.printf("1: %d\n", writeFreq.get(0).getValue());
+            lowerBound = 2;
+        } else {
+            lowerBound = 1;
+        }
+        for (; lowerBound <= max; lowerBound += step) {
+            int x = lowerBound;
+            int count = writeFreq.stream()
+                    .filter(w -> x <= w.getKey() && w.getKey() < x + step)
+                    .mapToInt(w -> w.getValue()).sum();
+            System.out.printf("%d...%d: %d\n", lowerBound,
+                    lowerBound + step - 1, count);
         }
 
         return 0;
+    }
+
+    private static <KeyType, ValueType> boolean isReadModifyWriteTxn(
+            Transaction<KeyType, ValueType> txn) {
+        var readKeys = new HashSet<KeyType>();
+        for (var ev : txn.getEvents()) {
+            if (ev.getType().equals(EventType.READ)) {
+                readKeys.add(ev.getKey());
+            } else if (readKeys.contains(ev.getKey())) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 
