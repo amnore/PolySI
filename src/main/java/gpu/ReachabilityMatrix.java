@@ -84,7 +84,11 @@ public class ReachabilityMatrix {
 	// ======= connect ======
 	
 	public void connect(Long[] src_ids, Long[] dst_ids) {
-		connect_simple(src_ids, dst_ids);
+		if (VeriConstants.GPU_MATRIX) {
+			connect_simple(src_ids, dst_ids);
+		} else {
+			connect_complicate(src_ids, dst_ids);
+		}
 	}
 	
 	// update the matrix by adding edge: src_id->dst_id
