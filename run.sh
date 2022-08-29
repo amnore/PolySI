@@ -1,9 +1,9 @@
 #! /bin/bash
 
-if [ "$COBRA_HOME" == "" ]; then
-  echo "COBRA_HOME hasn't been set"
-  exit 1
-fi
+# if [ "$COBRA_HOME" == "" ]; then
+  # echo "COBRA_HOME hasn't been set"
+  # exit 1
+# fi
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
@@ -11,7 +11,7 @@ EA="-ea"
 #MONO="-Djava.library.path=$SCRIPT_DIR/monosat/libmonosat.so -cp $SCRIPT_DIR/monosat/monosat.jar"
 #MONO="-cp $SCRIPT_DIR/monosat/"
 
-source $COBRA_HOME/env.sh
+# source $COBRA_HOME/env.sh
 
 
 function usage {
