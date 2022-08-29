@@ -36,7 +36,7 @@ function fail {
   exit 1
 }
 
-if [ "$JAVA_V" == "1.8" ]; then
+if [ true ]; then
   javac -h $DIR/include/ $DIR/src/main/java/gpu/GPUmm.java || fail "ERROR javac"
 elif [ "$JAVA_V" == "1.7" ]; then
   javac $DIR/src/main/java/gpu/GPUmm.java || fail "ERROR javac"
@@ -52,7 +52,7 @@ if [ "$SYS" == "Mac" ]; then
 elif [ "$SYS" == "Linux" ]; then
   #g++ -fPIC -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/linux/" \
   #  -shared -o $DIR/include/libgpumm.so $DIR/include/verifier_gpu_GPUmm.cpp || fail "ERROR g++"
-  nvcc \
+  $CUDA_PATH/bin/nvcc \
     -Xcompiler -fPIC\
     -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/linux/" \
     -shared -o $DIR/include/libgpumm.so $DIR/include/gpu_GPUmm.cu \
