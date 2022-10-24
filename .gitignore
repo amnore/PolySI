@@ -279,3 +279,5 @@ Temporary Items
 
 include
 .settings
+.direnv
+.envrc
