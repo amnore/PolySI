@@ -58,6 +58,9 @@ class Audit implements Callable<Integer> {
     @Option(names = { "--no-coalescing" }, description = "disable coalescing")
     private final Boolean noCoalescing = false;
 
+    @Option(names = { "--dot-output" }, description = "print conflicts in dot format")
+    private final Boolean dotOutput = false;
+
     @Parameters(description = "history path")
     private Path path;
 
@@ -69,6 +72,7 @@ class Audit implements Callable<Integer> {
 
         Pruning.setEnablePruning(!noPruning);
         SIVerifier.setCoalesceConstraints(!noCoalescing);
+        SIVerifier.setDotOutput(dotOutput);
 
         profiler.startTick("ENTIRE_EXPERIMENT");
         var pass = true;
