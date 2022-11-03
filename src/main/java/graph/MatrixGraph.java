@@ -324,6 +324,15 @@ public class MatrixGraph<T> implements MutableGraph<T> {
         return hasEdgeConnecting(endpoints.source(), endpoints.target());
     }
 
+    public long nonZeroElements() {
+        long n = 0;
+        for (int i = 0; i < adjacency.length; i++) {
+            n += outDegree(i);
+        }
+
+        return n;
+    }
+
     private boolean get(int i, int j) {
         return (adjacency[i][j / LONG_BITS] & (1L << (j % LONG_BITS))) != 0;
     }

@@ -25,10 +25,8 @@ public class Pruning {
     @Setter
     private static double stopThreshold = 0.01;
 
-    static <KeyType, ValueType> boolean pruneConstraints(
-            KnownGraph<KeyType, ValueType> knownGraph,
-            Collection<SIConstraint<KeyType, ValueType>> constraints,
-            History<KeyType, ValueType> history) {
+    static <KeyType, ValueType> boolean pruneConstraints(KnownGraph<KeyType, ValueType> knownGraph,
+            Collection<SIConstraint<KeyType, ValueType>> constraints, History<KeyType, ValueType> history) {
         if (!enablePruning) {
             return false;
         }
@@ -40,32 +38,27 @@ public class Pruning {
         boolean hasCycle = false;
         while (!hasCycle) {
             System.err.printf("Pruning round %d\n", rounds);
-            var result = pruneConstraintsWithPostChecking(knownGraph,
-                    constraints, history);
+            var result = pruneConstraintsWithPostChecking(knownGraph, constraints, history);
 
             hasCycle = result.getRight();
             solvedConstraints += result.getLeft();
 
             if (result.getLeft() <= stopThreshold * totalConstraints
-                || totalConstraints - solvedConstraints <= stopThreshold * totalConstraints) {
+                    || totalConstraints - solvedConstraints <= stopThreshold * totalConstraints) {
                 break;
             }
             rounds++;
         }
 
         profiler.endTick("SI_PRUNE");
-        System.err.printf(
-                "Pruned %d rounds, solved %d constraints\n"
-                        + "After prune: graphA: %d, graphB: %d\n",
-                rounds, solvedConstraints,
-                knownGraph.getKnownGraphA().edges().size(),
+        System.err.printf("Pruned %d rounds, solved %d constraints\n" + "After prune: graphA: %d, graphB: %d\n", rounds,
+                solvedConstraints, knownGraph.getKnownGraphA().edges().size(),
                 knownGraph.getKnownGraphB().edges().size());
         return hasCycle;
     }
 
     private static <KeyType, ValueType> Pair<Integer, Boolean> pruneConstraintsWithPostChecking(
-            KnownGraph<KeyType, ValueType> knownGraph,
-            Collection<SIConstraint<KeyType, ValueType>> constraints,
+            KnownGraph<KeyType, ValueType> knownGraph, Collection<SIConstraint<KeyType, ValueType>> constraints,
             History<KeyType, ValueType> history) {
         var profiler = Profiler.getInstance();
 
@@ -84,17 +77,16 @@ public class Pruning {
         }
 
         profiler.startTick("SI_PRUNE_POST_REACHABILITY");
-        var reachability = Utils
-                .reduceEdges(graphA.union(graphC), orderInSession)
-                .reachability();
+        var reachability = Utils.reduceEdges(graphA.union(graphC), orderInSession).reachability();
+        System.err.printf("reachability matrix sparsity: %.2f\n",
+                1 - reachability.nonZeroElements() / Math.pow(reachability.nodes().size(), 2));
         profiler.endTick("SI_PRUNE_POST_REACHABILITY");
 
         var solvedConstraints = new ArrayList<SIConstraint<KeyType, ValueType>>();
 
         profiler.startTick("SI_PRUNE_POST_CHECK");
         for (var c : constraints) {
-            var conflict = checkConflict(c.getEdges1(), reachability,
-                    knownGraph);
+            var conflict = checkConflict(c.getEdges1(), reachability, knownGraph);
             if (conflict.isPresent()) {
                 addToKnownGraph(knownGraph, c.getEdges2());
                 solvedConstraints.add(c);
@@ -122,29 +114,24 @@ public class Pruning {
         return Pair.of(solvedConstraints.size(), false);
     }
 
-    private static <KeyType, ValueType> void addToKnownGraph(
-            KnownGraph<KeyType, ValueType> knownGraph,
+    private static <KeyType, ValueType> void addToKnownGraph(KnownGraph<KeyType, ValueType> knownGraph,
             Collection<SIEdge<KeyType, ValueType>> edges) {
         for (var e : edges) {
             switch (e.getType()) {
             case WW:
-                knownGraph.putEdge(e.getFrom(), e.getTo(),
-                        new Edge<KeyType>(EdgeType.WW, e.getKey()));
+                knownGraph.putEdge(e.getFrom(), e.getTo(), new Edge<KeyType>(EdgeType.WW, e.getKey()));
                 break;
             case RW:
-                knownGraph.putEdge(e.getFrom(), e.getTo(),
-                        new Edge<KeyType>(EdgeType.RW, e.getKey()));
+                knownGraph.putEdge(e.getFrom(), e.getTo(), new Edge<KeyType>(EdgeType.RW, e.getKey()));
                 break;
             default:
-                throw new Error(
-                        "only WW and RW edges should appear in constraints");
+                throw new Error("only WW and RW edges should appear in constraints");
             }
         }
     }
 
     private static <KeyType, ValueType> Optional<SIEdge<KeyType, ValueType>> checkConflict(
-            Collection<SIEdge<KeyType, ValueType>> edges,
-            MatrixGraph<Transaction<KeyType, ValueType>> reachability,
+            Collection<SIEdge<KeyType, ValueType>> edges, MatrixGraph<Transaction<KeyType, ValueType>> reachability,
             KnownGraph<KeyType, ValueType> knownGraph) {
         for (var e : edges) {
             switch (e.getType()) {
@@ -155,8 +142,7 @@ public class Pruning {
                 }
                 break;
             case RW:
-                for (var n : knownGraph.getKnownGraphA()
-                        .predecessors(e.getFrom())) {
+                for (var n : knownGraph.getKnownGraphA().predecessors(e.getFrom())) {
                     if (reachability.hasEdgeConnecting(e.getTo(), n)) {
                         return Optional.of(e);
                         // System.err.printf("conflict edge: %s\n", e);
@@ -164,8 +150,7 @@ public class Pruning {
                 }
                 break;
             default:
-                throw new Error(
-                        "only WW and RW edges should appear in constraints");
+                throw new Error("only WW and RW edges should appear in constraints");
             }
         }
 
