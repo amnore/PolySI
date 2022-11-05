@@ -3,7 +3,6 @@ package graph;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -13,23 +12,21 @@ import java.util.stream.IntStream;
 
 import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
-import com.google.common.collect.Streams;
 import com.google.common.graph.ElementOrder;
 import com.google.common.graph.EndpointPair;
 import com.google.common.graph.Graph;
 import com.google.common.graph.GraphBuilder;
-import com.google.common.graph.Graphs;
 import com.google.common.graph.MutableGraph;
 
-import lombok.Getter;
-import lombok.Setter;
+import org.roaringbitmap.RoaringBitmap;
 
 import util.UnimplementedError;
 
 public class MatrixGraph<T> implements MutableGraph<T> {
     private final BiMap<T, Integer> nodeMap = HashBiMap.create();
-    private final long adjacency[][];
-    private static final int LONG_BITS = 64;
+    private final RoaringBitmap adjacency[];
+    // private final long adjacency[][];
+    // private static final int LONG_BITS = 64;
 
     public MatrixGraph(Graph<T> graph) {
         int i = 0;
@@ -37,7 +34,8 @@ public class MatrixGraph<T> implements MutableGraph<T> {
             nodeMap.put(n, i++);
         }
 
-        adjacency = new long[i][(i + LONG_BITS - 1) / LONG_BITS];
+        adjacency = newMatrix(i);
+        // adjacency = new long[i][(i + LONG_BITS - 1) / LONG_BITS];
         for (var e : graph.edges()) {
             putEdge(e.source(), e.target());
         }
@@ -47,19 +45,28 @@ public class MatrixGraph<T> implements MutableGraph<T> {
         return new MatrixGraph<>(graph.nodeMap);
     }
 
-    private MatrixGraph(BiMap<T, Integer> nodes) {
-        nodeMap.putAll(nodes);
-        adjacency = new long[nodes.size()][(nodes.size() + LONG_BITS - 1)
-                / LONG_BITS];
+    private static RoaringBitmap[] newMatrix(int size) {
+        var m = new RoaringBitmap[size];
+        for (int i = 0; i < size; i++) {
+            m[i] = new RoaringBitmap();
+        }
+        return m;
     }
 
-    private MatrixGraph(MatrixGraph<T> graph) {
-        nodeMap.putAll(graph.nodeMap);
-        adjacency = new long[graph.adjacency.length][];
-        for (var i = 0; i < adjacency.length; i++) {
-            adjacency[i] = graph.adjacency[i].clone();
-        }
+    private MatrixGraph(BiMap<T, Integer> nodes) {
+        nodeMap.putAll(nodes);
+        adjacency = newMatrix(nodes.size());
+        // adjacency = new long[nodes.size()][(nodes.size() + LONG_BITS - 1) / LONG_BITS];
     }
+
+    // private MatrixGraph(MatrixGraph<T> graph) {
+    //     nodeMap.putAll(graph.nodeMap);
+    //     adjacency = newMatrix(graph.adjacency.length);
+    //     // adjacency = new long[graph.adjacency.length][];
+    //     for (var i = 0; i < adjacency.length; i++) {
+    //         adjacency[i] = graph.adjacency[i].clone();
+    //     }
+    // }
 
     private MatrixGraph<T> bfsWithNoCycle(List<Integer> topoOrder) {
         var result = new MatrixGraph<T>(nodeMap);
@@ -70,9 +77,10 @@ public class MatrixGraph<T> implements MutableGraph<T> {
             for (var j : successorIds(n).toArray()) {
                 assert topoOrder.indexOf(j) > i;
                 result.set(n, j);
-                for (var k = 0; k < adjacency[0].length; k++) {
-                    result.adjacency[n][k] |= result.adjacency[j][k];
-                }
+                result.adjacency[n].or(result.adjacency[j]);
+                // for (var k = 0; k < adjacency[0].length; k++) {
+                //     result.adjacency[n][k] |= result.adjacency[j][k];
+                // }
             }
         }
 
@@ -122,9 +130,10 @@ public class MatrixGraph<T> implements MutableGraph<T> {
                     continue;
                 }
 
-                for (var k = 0; k < adjacency[0].length; k++) {
-                    result.adjacency[i][k] |= other.adjacency[j][k];
-                }
+                result.adjacency[i].or(other.adjacency[j]);
+                // for (var k = 0; k < adjacency[0].length; k++) {
+                //     result.adjacency[i][k] |= other.adjacency[j][k];
+                // }
             }
         }
 
@@ -140,10 +149,10 @@ public class MatrixGraph<T> implements MutableGraph<T> {
 
         var result = new MatrixGraph<>(nodeMap);
         for (var i = 0; i < adjacency.length; i++) {
-            for (var j = 0; j < adjacency[0].length; j++) {
-                result.adjacency[i][j] = adjacency[i][j]
-                        | other.adjacency[i][j];
-            }
+            result.adjacency[i] = RoaringBitmap.or(adjacency[i], other.adjacency[i]);
+            // for (var j = 0; j < adjacency[0].length; j++)
+            //     result.adjacency[i][j] = adjacency[i][j] | other.adjacency[i][j];
+            // }
         }
 
         return result;
@@ -168,14 +177,11 @@ public class MatrixGraph<T> implements MutableGraph<T> {
             });
         }
 
-        return nodes.size() == adjacency.length ? Optional.of(nodes)
-                : Optional.empty();
+        return nodes.size() == adjacency.length ? Optional.of(nodes) : Optional.empty();
     }
 
     public Optional<List<T>> topologicalSort() {
-        return topoSortId()
-                .map(o -> o.stream().map(n -> nodeMap.inverse().get(n))
-                        .collect(Collectors.toList()));
+        return topoSortId().map(o -> o.stream().map(n -> nodeMap.inverse().get(n)).collect(Collectors.toList()));
     }
 
     public boolean hasLoops() {
@@ -183,8 +189,7 @@ public class MatrixGraph<T> implements MutableGraph<T> {
     }
 
     private Graph<Integer> toSparseGraph() {
-        MutableGraph<Integer> graph = GraphBuilder.directed()
-                .allowsSelfLoops(true).build();
+        MutableGraph<Integer> graph = GraphBuilder.directed().allowsSelfLoops(true).build();
         for (int i = 0; i < adjacency.length; i++) {
             graph.addNode(i);
         }
@@ -227,13 +232,7 @@ public class MatrixGraph<T> implements MutableGraph<T> {
             return false;
         }
 
-        for (var i = 0; i < adjacency.length; i++) {
-            if (!Arrays.equals(adjacency[i], g.adjacency[i])) {
-                return false;
-            }
-        }
-
-        return true;
+        return Arrays.deepEquals(adjacency, g.adjacency);
     }
 
     @Override
@@ -290,8 +289,7 @@ public class MatrixGraph<T> implements MutableGraph<T> {
     @Override
     public Set<T> successors(T node) {
         var inv = nodeMap.inverse();
-        return successorIds(nodeMap.get(node)).mapToObj(inv::get)
-                .collect(Collectors.toSet());
+        return successorIds(nodeMap.get(node)).mapToObj(inv::get).collect(Collectors.toSet());
     }
 
     @Override
@@ -334,15 +332,18 @@ public class MatrixGraph<T> implements MutableGraph<T> {
     }
 
     private boolean get(int i, int j) {
-        return (adjacency[i][j / LONG_BITS] & (1L << (j % LONG_BITS))) != 0;
+        return adjacency[i].contains(j);
+        // return (adjacency[i][j / LONG_BITS] & (1L << (j % LONG_BITS))) != 0;
     }
 
     private void set(int i, int j) {
-        adjacency[i][j / LONG_BITS] |= (1L << (j % LONG_BITS));
+        adjacency[i].add(j);
+        // adjacency[i][j / LONG_BITS] |= (1L << (j % LONG_BITS));
     }
 
     private void clear(int i, int j) {
-        adjacency[i][j / LONG_BITS] &= ~(1L << (j % LONG_BITS));
+        adjacency[i].remove(j);
+        // adjacency[i][j / LONG_BITS] &= ~(1L << (j % LONG_BITS));
     }
 
     private int inDegree(int n) {
@@ -355,8 +356,8 @@ public class MatrixGraph<T> implements MutableGraph<T> {
     }
 
     private int outDegree(int n) {
-        return Arrays.stream(adjacency[n]).mapToInt(Long::bitCount)
-                .reduce(Integer::sum).orElse(0);
+        return adjacency[n].getCardinality();
+        // return Arrays.stream(adjacency[n]).mapToInt(Long::bitCount).reduce(Integer::sum).orElse(0);
     }
 
     private IntStream successorIds(int n) {
