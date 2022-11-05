@@ -1,41 +1,56 @@
 package graph;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
-import com.google.common.collect.BiMap;
-import com.google.common.collect.HashBiMap;
+import com.google.common.collect.ImmutableBiMap;
+import com.google.common.collect.Streams;
 import com.google.common.graph.ElementOrder;
 import com.google.common.graph.EndpointPair;
 import com.google.common.graph.Graph;
 import com.google.common.graph.GraphBuilder;
 import com.google.common.graph.MutableGraph;
 
+import org.apache.commons.lang3.tuple.Pair;
 import org.roaringbitmap.RoaringBitmap;
 
+import lombok.Getter;
 import util.UnimplementedError;
 
 public class MatrixGraph<T> implements MutableGraph<T> {
-    private final BiMap<T, Integer> nodeMap = HashBiMap.create();
+    @Getter
+    private final ImmutableBiMap<T, Integer> nodeMap;
     private final RoaringBitmap adjacency[];
     // private final long adjacency[][];
     // private static final int LONG_BITS = 64;
 
     public MatrixGraph(Graph<T> graph) {
-        int i = 0;
-        for (var n : graph.nodes()) {
-            nodeMap.put(n, i++);
+        var topoOrder = topoLogicalSort(graph);
+        var toNodeMap = ((Function<Collection<T>, ImmutableBiMap<T, Integer>>) nodes ->
+            Streams.mapWithIndex(nodes.stream(), (n, idx) -> Pair.of(n, (int) idx))
+                .collect(ImmutableBiMap.toImmutableBiMap(Pair::getKey, Pair::getValue)));
+
+        if (topoOrder.isEmpty()) {
+            nodeMap = toNodeMap.apply(graph.nodes());
+        } else {
+            nodeMap = toNodeMap.apply(topoOrder.get());
         }
 
-        adjacency = newMatrix(i);
+        adjacency = newMatrix(nodeMap.size());
         // adjacency = new long[i][(i + LONG_BITS - 1) / LONG_BITS];
+        for (var e : graph.edges()) {
+            putEdge(e.source(), e.target());
+        }
+    }
+
+    public MatrixGraph(Graph<T> graph, ImmutableBiMap<T, Integer> nodeMap) {
+        this.nodeMap = nodeMap;
+
+        adjacency = newMatrix(nodeMap.size());
         for (var e : graph.edges()) {
             putEdge(e.source(), e.target());
         }
@@ -53,19 +68,20 @@ public class MatrixGraph<T> implements MutableGraph<T> {
         return m;
     }
 
-    private MatrixGraph(BiMap<T, Integer> nodes) {
-        nodeMap.putAll(nodes);
+    private MatrixGraph(ImmutableBiMap<T, Integer> nodes) {
+        nodeMap = nodes;
         adjacency = newMatrix(nodes.size());
-        // adjacency = new long[nodes.size()][(nodes.size() + LONG_BITS - 1) / LONG_BITS];
+        // adjacency = new long[nodes.size()][(nodes.size() + LONG_BITS - 1) /
+        // LONG_BITS];
     }
 
     // private MatrixGraph(MatrixGraph<T> graph) {
-    //     nodeMap.putAll(graph.nodeMap);
-    //     adjacency = newMatrix(graph.adjacency.length);
-    //     // adjacency = new long[graph.adjacency.length][];
-    //     for (var i = 0; i < adjacency.length; i++) {
-    //         adjacency[i] = graph.adjacency[i].clone();
-    //     }
+    // nodeMap.putAll(graph.nodeMap);
+    // adjacency = newMatrix(graph.adjacency.length);
+    // // adjacency = new long[graph.adjacency.length][];
+    // for (var i = 0; i < adjacency.length; i++) {
+    // adjacency[i] = graph.adjacency[i].clone();
+    // }
     // }
 
     private MatrixGraph<T> bfsWithNoCycle(List<Integer> topoOrder) {
@@ -79,7 +95,7 @@ public class MatrixGraph<T> implements MutableGraph<T> {
                 result.set(n, j);
                 result.adjacency[n].or(result.adjacency[j]);
                 // for (var k = 0; k < adjacency[0].length; k++) {
-                //     result.adjacency[n][k] |= result.adjacency[j][k];
+                // result.adjacency[n][k] |= result.adjacency[j][k];
                 // }
             }
         }
@@ -121,7 +137,7 @@ public class MatrixGraph<T> implements MutableGraph<T> {
     }
 
     private MatrixGraph<T> matrixProduct(MatrixGraph<T> other) {
-        assert nodeMap.equals(other.nodeMap);
+        assert nodeMap.entrySet().equals(other.nodeMap.entrySet());
 
         var result = new MatrixGraph<>(nodeMap);
         for (var i = 0; i < adjacency.length; i++) {
@@ -132,7 +148,7 @@ public class MatrixGraph<T> implements MutableGraph<T> {
 
                 result.adjacency[i].or(other.adjacency[j]);
                 // for (var k = 0; k < adjacency[0].length; k++) {
-                //     result.adjacency[i][k] |= other.adjacency[j][k];
+                // result.adjacency[i][k] |= other.adjacency[j][k];
                 // }
             }
         }
@@ -145,13 +161,13 @@ public class MatrixGraph<T> implements MutableGraph<T> {
     }
 
     public MatrixGraph<T> union(MatrixGraph<T> other) {
-        assert nodeMap.equals(other.nodeMap);
+        assert nodeMap.entrySet().equals(other.nodeMap.entrySet());
 
         var result = new MatrixGraph<>(nodeMap);
         for (var i = 0; i < adjacency.length; i++) {
             result.adjacency[i] = RoaringBitmap.or(adjacency[i], other.adjacency[i]);
             // for (var j = 0; j < adjacency[0].length; j++)
-            //     result.adjacency[i][j] = adjacency[i][j] | other.adjacency[i][j];
+            // result.adjacency[i][j] = adjacency[i][j] | other.adjacency[i][j];
             // }
         }
 
@@ -357,7 +373,8 @@ public class MatrixGraph<T> implements MutableGraph<T> {
 
     private int outDegree(int n) {
         return adjacency[n].getCardinality();
-        // return Arrays.stream(adjacency[n]).mapToInt(Long::bitCount).reduce(Integer::sum).orElse(0);
+        // return
+        // Arrays.stream(adjacency[n]).mapToInt(Long::bitCount).reduce(Integer::sum).orElse(0);
     }
 
     private IntStream successorIds(int n) {
@@ -400,5 +417,32 @@ public class MatrixGraph<T> implements MutableGraph<T> {
     @Override
     public boolean removeEdge(EndpointPair<T> endpoints) {
         return removeEdge(endpoints.source(), endpoints.target());
+    }
+
+    private static <T> Optional<List<T>> topoLogicalSort(Graph<T> graph) {
+        var list = new ArrayList<T>();
+        var nodes = graph.nodes();
+        var inDegrees = new HashMap<T, Integer>();
+
+        for (var n : nodes) {
+            var in = graph.inDegree(n);
+            inDegrees.put(n, in);
+            if (in == 0) {
+                list.add(n);
+            }
+        }
+
+        for (int i = 0; i < list.size(); i++) {
+            for (var n : graph.successors(list.get(i))) {
+                if (inDegrees.compute(n, (k, v) -> v - 1) == 0) {
+                    list.add(n);
+                }
+            }
+        }
+
+        if (list.size() < nodes.size()) {
+            return Optional.empty();
+        }
+        return Optional.of(list);
     }
 }

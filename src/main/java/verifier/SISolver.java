@@ -106,7 +106,7 @@ class SISolver<KeyType, ValueType> {
         var orderInSession = Utils.getOrderInSession(history);
         var matAC = Utils.reduceEdges(
                 matA.union(
-                        matA.composition(new MatrixGraph<>(graphB.asGraph()))),
+                        matA.composition(new MatrixGraph<>(graphB.asGraph(), matA.getNodeMap()))),
                 orderInSession);
         var reachability = matAC.reachability();
         profiler.endTick("SI_SOLVER_GEN_REACHABILITY");

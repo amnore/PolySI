@@ -2,7 +2,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.random.RandomGenerator;
+import java.util.Random;
 import java.util.stream.IntStream;
 
 import com.google.common.base.Stopwatch;
@@ -26,8 +26,8 @@ class TestMatrixGraph {
 
         IntStream.range(0, nodeNum).forEach(n -> graph.addNode(n));
 
-        Streams.zip(RandomGenerator.getDefault().ints(0, nodeNum).boxed(),
-                RandomGenerator.getDefault().ints(0, nodeNum).boxed(), Pair::of)
+        Streams.zip(new Random().ints(0, nodeNum).boxed(),
+                new Random().ints(0, nodeNum).boxed(), Pair::of)
                 .limit(edgesNum)
                 .forEach(p -> {
                     if (!p.getLeft().equals(p.getRight())) {

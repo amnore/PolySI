@@ -64,7 +64,7 @@ public class Pruning {
 
         profiler.startTick("SI_PRUNE_POST_GRAPH_A_B");
         var graphA = new MatrixGraph<>(knownGraph.getKnownGraphA().asGraph());
-        var graphB = new MatrixGraph<>(knownGraph.getKnownGraphB().asGraph());
+        var graphB = new MatrixGraph<>(knownGraph.getKnownGraphB().asGraph(), graphA.getNodeMap());
         var orderInSession = Utils.getOrderInSession(history);
         profiler.endTick("SI_PRUNE_POST_GRAPH_A_B");
 
