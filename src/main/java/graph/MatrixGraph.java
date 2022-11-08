@@ -141,15 +141,8 @@ public class MatrixGraph<T> implements MutableGraph<T> {
 
         var result = new MatrixGraph<>(nodeMap);
         for (var i = 0; i < adjacency.length; i++) {
-            for (var j = 0; j < adjacency.length; j++) {
-                if (!get(i, j)) {
-                    continue;
-                }
-
+            for (var j : adjacency[i]) {
                 result.adjacency[i].or(other.adjacency[j]);
-                // for (var k = 0; k < adjacency[0].length; k++) {
-                // result.adjacency[i][k] |= other.adjacency[j][k];
-                // }
             }
         }
 
@@ -179,7 +172,12 @@ public class MatrixGraph<T> implements MutableGraph<T> {
         var inDegrees = new int[adjacency.length];
 
         for (var i = 0; i < adjacency.length; i++) {
-            inDegrees[i] = inDegree(i);
+            for (var j : adjacency[i]) {
+                inDegrees[j]++;
+            }
+        }
+
+        for (var i = 0; i < adjacency.length; i++) {
             if (inDegrees[i] == 0) {
                 nodes.add(i);
             }
@@ -211,10 +209,8 @@ public class MatrixGraph<T> implements MutableGraph<T> {
         }
 
         for (int i = 0; i < adjacency.length; i++) {
-            for (int j = 0; j < adjacency.length; j++) {
-                if (get(i, j)) {
-                    graph.putEdge(i, j);
-                }
+            for (var j : adjacency[i]) {
+                graph.putEdge(i, j);
             }
         }
 
@@ -262,10 +258,8 @@ public class MatrixGraph<T> implements MutableGraph<T> {
         var map = nodeMap.inverse();
 
         for (int i = 0; i < adjacency.length; i++) {
-            for (int j = 0; j < adjacency.length; j++) {
-                if (get(i, j)) {
-                    result.add(EndpointPair.ordered(map.get(i), map.get(j)));
-                }
+            for (var j : adjacency[i]) {
+                result.add(EndpointPair.ordered(map.get(i), map.get(j)));
             }
         }
 
@@ -378,7 +372,8 @@ public class MatrixGraph<T> implements MutableGraph<T> {
     }
 
     private IntStream successorIds(int n) {
-        return IntStream.range(0, adjacency.length).filter(i -> get(n, i));
+        return adjacency[n].stream();
+//        return IntStream.range(0, adjacency.length).filter(i -> get(n, i));
     }
 
     @Override
