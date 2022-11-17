@@ -94,6 +94,7 @@ public class MatrixGraph<T> implements MutableGraph<T> {
                 assert topoOrder.indexOf(j) > i;
                 result.set(n, j);
                 result.adjacency[n].or(result.adjacency[j]);
+                result.adjacency[n].runOptimize();
                 // for (var k = 0; k < adjacency[0].length; k++) {
                 // result.adjacency[n][k] |= result.adjacency[j][k];
                 // }
