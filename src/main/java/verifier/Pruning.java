@@ -70,6 +70,7 @@ public class Pruning {
 
         profiler.startTick("SI_PRUNE_POST_GRAPH_C");
         var graphC = graphA.composition(graphB);
+        graphB = null;
         profiler.endTick("SI_PRUNE_POST_GRAPH_C");
 
         if (graphC.hasLoops()) {
@@ -78,6 +79,9 @@ public class Pruning {
 
         profiler.startTick("SI_PRUNE_POST_REACHABILITY");
         var reachability = Utils.reduceEdges(graphA.union(graphC), orderInSession).reachability();
+        graphA = null;
+        graphC = null;
+        orderInSession = null;
         System.err.printf("reachability matrix sparsity: %.2f\n",
                 1 - reachability.nonZeroElements() / Math.pow(reachability.nodes().size(), 2));
         profiler.endTick("SI_PRUNE_POST_REACHABILITY");
