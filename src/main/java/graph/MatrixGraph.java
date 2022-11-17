@@ -416,6 +416,10 @@ public class MatrixGraph<T> implements MutableGraph<T> {
     }
 
     private static <T> Optional<List<T>> topoLogicalSort(Graph<T> graph) {
+        if (graph instanceof MatrixGraph) {
+            return ((MatrixGraph<T>)graph).topologicalSort();
+        }
+
         var list = new ArrayList<T>();
         var nodes = graph.nodes();
         var inDegrees = new HashMap<T, Integer>();
