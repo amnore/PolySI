@@ -111,12 +111,17 @@ class SISolver<KeyType, ValueType> {
         var reachability = matAC.reachability();
         profiler.endTick("SI_SOLVER_GEN_REACHABILITY");
 
+        matA = null;
+        orderInSession = null;
+
         profiler.startTick("SI_SOLVER_GEN_GRAPH_A_UNION_C");
         // Known edges and unknown edges are collected separately
         var knownEdges = Utils.getKnownEdges(graphA, graphB, matAC);
+        matAC = null;
         addConstraints(constraints, graphA, graphB);
         var unknownEdges = Utils.getUnknownEdges(graphA, graphB, reachability,
                 solver);
+        reachability = null;
         profiler.endTick("SI_SOLVER_GEN_GRAPH_A_UNION_C");
 
         List.of(Pair.of('A', graphA), Pair.of('B', graphB)).forEach(p -> {
