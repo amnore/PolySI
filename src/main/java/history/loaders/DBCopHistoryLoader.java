@@ -3,8 +3,6 @@ package history.loaders;
 import static history.Event.EventType.READ;
 import static history.Event.EventType.WRITE;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -47,18 +45,15 @@ public class DBCopHistoryLoader implements HistoryParser<Long, Long> {
 	@Override
 	@SneakyThrows
 	public History<Long, Long> loadHistory() {
-		var in = new LittleEndianDataInputStream(new BufferedInputStream(new FileInputStream(logFile)));
-		var history = new InternalLoader(in).load();
-        in.close();
-        return history;
+		var in = new LittleEndianDataInputStream(new FileInputStream(logFile));
+		return (new InternalLoader(in)).load();
 	}
 
 	@Override
 	@SneakyThrows
 	public void dumpHistory(History<Long, Long> history) {
-		var out = new LittleEndianDataOutputStream(new BufferedOutputStream(new FileOutputStream(logFile)));
-		new InternalDumper(history, out).dump();
-        out.close();
+		var out = new LittleEndianDataOutputStream(new FileOutputStream(logFile));
+		(new InternalDumper(history, out)).dump();
 	}
 
 	@RequiredArgsConstructor
