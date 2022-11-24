@@ -78,7 +78,7 @@ public class Pruning {
         }
 
         profiler.startTick("SI_PRUNE_POST_REACHABILITY");
-        var reachability = Utils.reduceEdges(new MatrixGraph<>(graphA.union(graphC)), orderInSession).reachability();
+        var reachability = Utils.reduceEdges(graphA.union(graphC), orderInSession).reachability();
         graphA = null;
         graphC = null;
         orderInSession = null;
