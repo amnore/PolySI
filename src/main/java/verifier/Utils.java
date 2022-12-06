@@ -99,11 +99,12 @@ class Utils {
             for (var n : graphA.successors(p)) {
                 var predEdges = graphA.edgeValue(p, n).get();
 
-                if (!reachability.hasEdgeConnecting(p, n)) {
+                if (p == n || !reachability.hasEdgeConnecting(p, n)) {
                     predEdges.forEach(e -> edges.add(Triple.of(p, n, e)));
                 }
 
-                var txns = graphB.successors(n).stream().filter(t -> !reachability.hasEdgeConnecting(p, t))
+                var txns = graphB.successors(n).stream()
+                        .filter(t -> p == t || !reachability.hasEdgeConnecting(p, t))
                         .collect(Collectors.toList());
 
                 for (var s : txns) {

@@ -133,7 +133,12 @@ public class MatrixGraph<T> implements MutableGraph<T> {
     }
 
     public MatrixGraph<T> reachability() {
-        return allNodesBfs();
+        var result = allNodesBfs();
+        for (int i = 0; i < result.nodeMap.size(); i++) {
+            result.set(i, i);
+        }
+
+        return result;
     }
 
     private MatrixGraph<T> matrixProduct(MatrixGraph<T> other) {

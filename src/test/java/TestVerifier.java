@@ -267,4 +267,37 @@ public class TestVerifier {
 
         assertFalse(new SIVerifier<>(loader).audit());
     }
+
+    @Test
+    void testExample1() {
+        var loader = new TestLoader(
+            Set.of(0, 1, 2, 3, 4),
+            Map.of(
+                0, List.of(0),
+                1, List.of(1),
+                2, List.of(2, 3),
+                3, List.of(4),
+                4, List.of(5)
+            ),
+            Map.of(
+                0, List.of(Triple.of(WRITE, "x", 1)),
+                1, List.of(
+                    Triple.of(READ, "x", 1),
+                    Triple.of(READ, "y", 0)
+                ),
+                2, List.of(
+                    Triple.of(WRITE, "x", 0),
+                    Triple.of(WRITE, "y", 0)
+                ),
+                3, List.of(Triple.of(WRITE, "x", 2)),
+                4, List.of(Triple.of(WRITE, "y", 1)),
+                5, List.of(
+                    Triple.of(READ, "x", 0),
+                    Triple.of(READ, "y", 0)
+                )
+            )
+        );
+
+        assertTrue(new SIVerifier<>(loader).audit());
+    }
 }
