@@ -24,7 +24,7 @@ public class SIVerifier<KeyType, ValueType> {
 
     @Getter
     @Setter
-    private static boolean coalesceConstraints = false;
+    private static boolean coalesceConstraints = true;
 
     @Getter
     @Setter
