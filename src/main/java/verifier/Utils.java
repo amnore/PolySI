@@ -240,11 +240,11 @@ class Utils {
         for (var c : constraints) {
             color += colorStep;
             for (var e : c.getEdges1()) {
-                builder.append(String.format("\"%s\" -> \"%s\" [style=dotted,color=\"#%6x\"];\n", e.getFrom(), e.getTo(), color));
+                builder.append(String.format("\"%s\" -> \"%s\" [style=dotted,color=\"#%06x\"];\n", e.getFrom(), e.getTo(), color));
             }
 
             for (var e : c.getEdges2()) {
-                builder.append(String.format("\"%s\" -> \"%s\" [style=dashed,color=\"#%6x\"];\n", e.getFrom(), e.getTo(), color));
+                builder.append(String.format("\"%s\" -> \"%s\" [style=dashed,color=\"#%06x\"];\n", e.getFrom(), e.getTo(), color));
             }
         }
 

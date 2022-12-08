@@ -1,11 +1,8 @@
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
-
-import org.apache.commons.lang3.tuple.Pair;
 
 import history.Event;
 import history.Event.EventType;
@@ -16,6 +13,7 @@ import history.HistoryTransformer;
 import history.Transaction;
 import history.loaders.CobraHistoryLoader;
 import history.loaders.DBCopHistoryLoader;
+import history.loaders.ElleHistoryLoader;
 import history.loaders.TextHistoryLoader;
 import history.transformers.Identity;
 import history.transformers.SnapshotIsolationToSerializable;
@@ -28,7 +26,6 @@ import util.Profiler;
 import util.UnimplementedError;
 import verifier.Pruning;
 import verifier.SIVerifier;
-import graph.MatrixGraph;
 
 @Command(name = "verifier", mixinStandardHelpOptions = true, version = "verifier 0.0.1", subcommands = { Audit.class,
         Convert.class, Stat.class, Dump.class })
@@ -68,7 +65,7 @@ class Audit implements Callable<Integer> {
 
     @Override
     public Integer call() {
-        var loader = Utils.getParser(type, path);
+        var loader = Utils.getLoader(type, path);
 
         Pruning.setEnablePruning(!noPruning);
         SIVerifier.setCoalesceConstraints(!noCoalescing);
@@ -114,13 +111,17 @@ class Convert implements Callable<Integer> {
 
     @Override
     public Integer call() {
-        var in = Utils.getParser(inType, inPath);
-        var out = Utils.getParser(outType, outPath);
+        var in = Utils.getLoader(inType, inPath);
+        var out = Utils.getLoader(outType, outPath);
         var transformer = Utils.getTransformer(transformation);
 
         var history = in.loadHistory();
         history = transformer.transformHistory(history);
-        convertAndDump(out, history);
+
+        if (!(out instanceof HistoryParser)) {
+            throw new RuntimeException(String.format("Conversion not supported for %s", out.getClass().getName()));
+        }
+        convertAndDump((HistoryParser<?, ?>) out, history);
 
         return 0;
     }
@@ -140,7 +141,7 @@ class Stat implements Callable<Integer> {
 
     @Override
     public Integer call() {
-        var loader = Utils.getParser(type, path);
+        var loader = Utils.getLoader(type, path);
         var history = loader.loadHistory();
 
         var txns = history.getTransactions();
@@ -185,8 +186,8 @@ class Stat implements Callable<Integer> {
         return 0;
     }
 
-    private static <KeyType, ValueType> boolean isReadModifyWriteTxn(Transaction<KeyType, ValueType> txn) {
-        var readKeys = new HashSet<KeyType>();
+    private static boolean isReadModifyWriteTxn(Transaction<?, ?> txn) {
+        var readKeys = new HashSet<Object>();
         for (var ev : txn.getEvents()) {
             if (ev.getType().equals(EventType.READ)) {
                 readKeys.add(ev.getKey());
@@ -209,7 +210,7 @@ class Dump implements Callable<Integer> {
 
     @Override
     public Integer call() {
-        var loader = Utils.getParser(type, path);
+        var loader = Utils.getLoader(type, path);
         var history = loader.loadHistory();
 
         for (var session : history.getSessions()) {
@@ -230,7 +231,7 @@ class Dump implements Callable<Integer> {
 }
 
 class Utils {
-    static HistoryParser<?, ?> getParser(HistoryType type, Path path) {
+    static HistoryLoader<?, ?> getLoader(HistoryType type, Path path) {
         switch (type) {
         case COBRA:
             return new CobraHistoryLoader(path);
@@ -238,6 +239,8 @@ class Utils {
             return new DBCopHistoryLoader(path);
         case TEXT:
             return new TextHistoryLoader(path);
+        case ELLE:
+            return new ElleHistoryLoader(path);
         default:
             throw new UnimplementedError();
         }
@@ -269,7 +272,7 @@ class Utils {
 }
 
 enum HistoryType {
-    COBRA, DBCOP, TEXT
+    COBRA, DBCOP, TEXT, ELLE
 }
 
 enum HistoryTransformation {
