@@ -24,6 +24,7 @@ import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 import util.Profiler;
 import util.UnimplementedError;
+import verifier.NaiveSERVerifier;
 import verifier.Pruning;
 import verifier.SIVerifier;
 
@@ -73,7 +74,7 @@ class Audit implements Callable<Integer> {
 
         profiler.startTick("ENTIRE_EXPERIMENT");
         var pass = true;
-        var verifier = new SIVerifier<>(loader);
+        var verifier = new NaiveSERVerifier<>(loader);
         pass = verifier.audit();
         profiler.endTick("ENTIRE_EXPERIMENT");
 
