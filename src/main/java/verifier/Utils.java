@@ -61,6 +61,7 @@ class Utils {
                 return false;
             }
 
+            var myWriteIndices = txnWrites.getOrDefault(Pair.of(ev.getTransaction(), ev.getKey()), new ArrayList<>());
             var writeIndices = txnWrites.get(Pair.of(writeEv.getLeft().getTransaction(), writeEv.getLeft().getKey()));
             var j = Collections.binarySearch(writeIndices, writeEv.getRight());
 
@@ -72,7 +73,7 @@ class Utils {
                     System.err.printf("%s reads from a write after it: %s\n", ev, writeEv.getLeft());
                     return false;
                 }
-            } else if (j != writeIndices.size() - 1) {
+            } else if (j != writeIndices.size() - 1 || (!myWriteIndices.isEmpty() && myWriteIndices.get(0) < i)) {
                 System.err.printf("%s not reading from latest write: %s\n", ev, writeEv.getLeft());
                 return false;
             }
